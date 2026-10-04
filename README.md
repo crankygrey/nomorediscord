@@ -60,8 +60,10 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
   refreshes every 12 seconds. No hosting, no players — reads as empty.
-- **Host handover:** when the host leaves, the survivors race for the freed host ID and one of
-  them takes over. Audio never routes through the host, so nobody's call drops.
+- **Host handover:** when the host leaves — cleanly or by closing the tab — the survivors race
+  for the freed host ID and one of them takes over. Audio never routes through the host, so
+  nobody's call drops. A player who cannot reach the host opens the room themselves instead of
+  hanging on "Connecting".
 
 ## Chat history and privacy
 

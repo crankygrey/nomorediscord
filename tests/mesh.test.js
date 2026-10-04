@@ -426,6 +426,33 @@ async function probeCount(page, roomId) {
     await sendChat(late, 'back from the dead');
     await sleep(1500);
     report.expect('the survivor still hears a newcomer after the reload', (await snapshot(clients[2].page)).chatTexts.includes('back from the dead'), true);
+
+    console.log('\n[16] a host that dies without leaving hands the room over instead of hanging');
+    const staleRoom = `stale-${RUN_ID}`;
+    const doomed = await openClient('DoomedHawk', staleRoom);
+    await join(doomed);
+    const stranded = await openClient('StrandedFox', staleRoom);
+    await join(stranded);
+    await sleep(JOIN_WAIT + 2000);
+    const strandedBefore = await snapshot(stranded.page);
+    report.expect('the second player starts as a guest', [strandedBefore.isHost, strandedBefore.connectedCount], [false, 1]);
+    await doomed.page.evaluate(() => {
+      state.peer.destroy();
+    });
+    await sleep(12000);
+    const strandedAfter = await snapshot(stranded.page);
+    console.log(describe('after the host vanished', strandedAfter));
+    report.expect('the stranded player stops showing Connecting', strandedAfter.statusChip, 'Hosting room');
+    report.expect('the stranded player became the host', strandedAfter.isHost, true);
+    report.expect('the dead host is gone from the roster', strandedAfter.peerNames, []);
+    report.expect('the takeover is announced in chat', strandedAfter.systemTexts.some((text) => /now hosting this room/.test(text)), true);
+    const third = await openClient('ThirdViper', staleRoom);
+    await join(third);
+    await sleep(JOIN_WAIT + 2000);
+    const thirdSnap = await snapshot(third.page);
+    console.log(describe('player after the takeover', thirdSnap));
+    report.expect('the new room still accepts players', [thirdSnap.isHost, thirdSnap.connectedCount], [false, 1]);
+    report.expect('the new player links up with the promoted host', thirdSnap.liveRemoteTracks, 1);
   } catch (error) {
     console.error('\nTEST FAILURE', error);
     process.exitCode = 1;

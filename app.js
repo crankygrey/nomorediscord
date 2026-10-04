@@ -289,7 +289,17 @@ state.chatHistory = [];
     } else {
       state.status = 'connecting';
       logEvent(`Connecting to the ${room.label} host...`);
-      await dialHost();
+      try {
+        await dialHost();
+      } catch (error) {
+        if (state.leaving || !state.joined) {
+          throw error;
+        }
+        const claimed = await claimHostSeat('Nobody was answering, so you opened the room. Guard the throne.');
+        if (!claimed) {
+          throw error;
+        }
+      }
     }
 
     playSound('join');
@@ -567,27 +577,59 @@ function dialHost() {
 
     entry.conn.once('error', (error) => {
       clearTimeout(timer);
-      if (isPeerUnavailable(error)) {
-        recoverHostSlot();
-        reject(new Error('That room has nobody hosting it right now. Try again in a moment, or join the other room.'));
-        return;
-      }
       reject(error);
     });
   });
 }
 
-function recoverHostSlot() {
-  for (const delay of TIMEOUTS.hostReclaim) {
-    setTimeout(() => {
-      if (!state.joined || state.leaving || state.isHost) {
-        return;
-      }
-      openPeer(state.hostId).then(() => {
-        logEvent('Stale room host cleared - you are now hosting this room.');
-      }).catch(() => {});
-    }, delay);
+function promoteToHost(candidate, message) {
+  const previous = state.peer;
+  state.peer = candidate;
+  state.isHost = true;
+  state.migrating = false;
+  state.reconnectTried = false;
+  try {
+    if (previous && typeof previous.disconnect === 'function') {
+      previous.disconnect();
+    }
+  } catch (error) {
+    void error;
   }
+  state.status = 'host';
+  hideAlert(dom.sessionError);
+  state.chatHistory = mergeChatLines(state.chatHistory, state.storedLines);
+  logEvent(message || 'You are now hosting this room. Guard the throne.');
+  broadcast({ type: 'host', peer: { id: candidate.id, name: state.name } });
+  render();
+}
+
+async function claimHostSeat(message) {
+  if (state.leaving || !state.joined || state.isHost) {
+    return false;
+  }
+
+  logEvent('The host is not answering. Opening the room yourself...');
+  render();
+
+  for (const delay of [0, ...TIMEOUTS.hostReclaim]) {
+    if (delay) {
+      await sleep(delay);
+    }
+    if (state.leaving || !state.joined || state.isHost) {
+      return false;
+    }
+    let candidate = null;
+    try {
+      candidate = await openPeer(state.hostId);
+    } catch (error) {
+      void error;
+      continue;
+    }
+    promoteToHost(candidate, message);
+    return true;
+  }
+
+  return false;
 }
 
 function acceptConnection(conn) {
@@ -1161,9 +1203,7 @@ function adoptNewHost(hostPeerId, name) {
 function onConnectionError(entry, error) {
   if (entry.isHost && isPeerUnavailable(error)) {
     removePeer(entry, { log: false });
-    recoverHostSlot();
-    showAlert(dom.sessionError, 'The room host stopped answering. Retry the room in a moment.', 'error');
-    render();
+    claimHostSeat('The host vanished, so you opened the room instead. Guard the throne.');
     return;
   }
   removePeer(entry, { log: false });
@@ -1274,24 +1314,7 @@ async function migrateToHost() {
         continue;
       }
 
-      const previous = state.peer;
-      state.peer = candidate;
-      state.isHost = true;
-      state.migrating = false;
-      state.reconnectTried = false;
-      try {
-        if (previous && typeof previous.disconnect === 'function') {
-          previous.disconnect();
-        }
-      } catch (error) {
-        void error;
-      }
-      state.status = 'host';
-      hideAlert(dom.sessionError);
-      state.chatHistory = mergeChatLines(state.chatHistory, state.storedLines);
-      logEvent('You are now hosting this room. Guard the throne.');
-      broadcast({ type: 'host', peer: { id: candidate.id, name: state.name } });
-      render();
+      promoteToHost(candidate);
       return;
     }
 
@@ -1339,7 +1362,9 @@ function handlePeerError(error) {
 
   switch (type) {
     case 'peer-unavailable':
-      recoverHostSlot();
+      if (!state.isHost && state.joined) {
+        claimHostSeat('The host is gone, so you opened the room instead. Guard the throne.');
+      }
       break;
     case 'browser-incompatible':
       showAlert(dom.sessionError, 'This browser does not support WebRTC, which NoMoreDiscord needs.', 'error');
