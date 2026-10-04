@@ -7,6 +7,7 @@ const DEBUG_ROOMS = TRACE;
 const PEER_OPTIONS = {
   debug: QUERY.has('debug') ? 2 : 0,
   config: {
+    iceCandidatePoolSize: 4,
     iceServers: [
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
       { urls: 'stun:global.stun.twilio.com:3478' },
@@ -14,12 +15,12 @@ const PEER_OPTIONS = {
       {
         // Relay fallback for networks where no direct path exists (symmetric NAT,
         // blocked UDP, some mobile and office wifi). The TCP variants matter most:
-        // UDP is usually the first thing a network drops. Swap in your own coturn
-        // if this public relay is ever slow or busy.
+        // UDP is usually the first thing a network drops.
         urls: [
-          'turn:global.relay.metered.ca:80?transport=tcp',
-          'turns:global.relay.metered.ca:443?transport=tcp',
-          'turn:global.relay.metered.ca:80'
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turn:openrelay.metered.ca:443?transport=tcp',
+          'turns:openrelay.metered.ca:443?transport=tcp'
         ],
         username: 'openrelayproject',
         credential: 'openrelayproject'
@@ -39,13 +40,13 @@ const MIC_CONSTRAINTS = {
 };
 
 const TIMEOUTS = {
-  peerConnect: 12000,
-  streamArrival: 9000,
+  peerConnect: 30000,
+  streamArrival: 15000,
   parkedCall: 25000,
   mediaRetry: 1500,
   mediaAttempts: 3,
   hostReclaim: [1200, 4000, 10000],
-  hostDial: 15000,
+  hostDial: 45000,
   probe: 4500
 };
 

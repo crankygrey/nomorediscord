@@ -53,9 +53,10 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 
 ## How it works
 
-- **Signaling:** the free public [PeerJS](https://peerjs.com) broker. That is the only third
-  party involved, and it never carries your audio.
+- **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
+  The app also configures public STUN plus Metered Open Relay TURN so strict networks can fall
+  back to relay candidates when a direct path is not possible.
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
