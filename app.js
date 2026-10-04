@@ -9,7 +9,21 @@ const PEER_OPTIONS = {
   config: {
     iceServers: [
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-      { urls: 'stun:global.stun.twilio.com:3478' }
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      {
+        // Relay fallback for networks where no direct path exists (symmetric NAT,
+        // blocked UDP, some mobile and office wifi). The TCP variants matter most:
+        // UDP is usually the first thing a network drops. Swap in your own coturn
+        // if this public relay is ever slow or busy.
+        urls: [
+          'turn:global.relay.metered.ca:80?transport=tcp',
+          'turns:global.relay.metered.ca:443?transport=tcp',
+          'turn:global.relay.metered.ca:80'
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ]
   }
 };
@@ -562,13 +576,24 @@ function dialHost() {
       return;
     }
 
+    // The host dial owns its own deadline. The generic per-peer timer would fire
+    // first and treat a host we never reached as a host that just left.
+    clearTimeout(entry.connectTimer);
+    entry.connectTimer = null;
+
+    const slowNote = setTimeout(() => {
+      logEvent('Still trying to reach the host. Strict networks can take a while...');
+    }, TIMEOUTS.hostDial / 2);
+
     const timer = setTimeout(() => {
+      clearTimeout(slowNote);
       dropPeer(entry);
       reject(new Error('Timed out reaching the room host. Nobody is hosting that room right now - try again in a moment or pick the other room.'));
     }, TIMEOUTS.hostDial);
 
     entry.conn.once('open', () => {
       clearTimeout(timer);
+      clearTimeout(slowNote);
       if (state.status !== 'host') {
         state.status = 'live';
       }
@@ -577,6 +602,7 @@ function dialHost() {
 
     entry.conn.once('error', (error) => {
       clearTimeout(timer);
+      clearTimeout(slowNote);
       reject(error);
     });
   });
@@ -604,7 +630,7 @@ function promoteToHost(candidate, message) {
 }
 
 async function claimHostSeat(message) {
-  if (state.leaving || !state.joined || state.isHost) {
+  if (state.leaving || !state.joined || state.isHost || state.migrating) {
     return false;
   }
 

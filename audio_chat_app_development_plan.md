@@ -35,6 +35,10 @@ browser to browser over WebRTC; only PeerJS's free public broker is used for sig
 ## Voice
 
 - `getUserMedia` with `echoCancellation`, `noiseSuppression`, `autoGainControl`, `channelCount: 1`.
+- ICE uses three STUN servers plus a TURN relay (`turn:global.relay.metered.ca`, TCP first) in
+  `PEER_OPTIONS`. The relay is not optional in practice: without it, two players behind
+  symmetric NAT or a network that blocks UDP can never connect, even though the same build
+  works fine on localhost.
 - Media rides `peer.call()` / `call.answer()`; DataConnections carry chat and signaling only.
 - Incoming calls are answered with the local stream, with retries if no audio arrives.
 - Modes: **open mic** (default, always transmitting), **push to talk** (hold Space or the
