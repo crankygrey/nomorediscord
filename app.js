@@ -4,6 +4,21 @@ const QUERY = new URLSearchParams(location.search);
 const TRACE = QUERY.has('trace') || QUERY.has('debug');
 const DEBUG_ROOMS = TRACE;
 
+// A TURN relay is what lets two players on strict networks meet at all. If both
+// sit behind symmetric NAT, or either router blocks UDP, STUN alone can never
+// produce a working candidate pair and the guest hangs on "Connecting" forever.
+// There is no verified public demo relay: openrelayproject and turn.cloudflare.com
+// both were measured returning zero relay candidates, so nothing is enabled by
+// default. Drop your own coturn credentials in here and redeploy:
+//
+//   const TURN_SERVERS = [
+//     { urls: 'turn:your.coturn.host:3478?transport=tcp', username: 'u', credential: 'p' },
+//     { urls: 'turns:your.coturn.host:5349?transport=tcp', username: 'u', credential: 'p' }
+//   ];
+//
+// README "Strict networks" has a working coturn recipe.
+const TURN_SERVERS = [];
+
 const PEER_OPTIONS = {
   debug: QUERY.has('debug') ? 2 : 0,
   config: {
@@ -12,19 +27,7 @@ const PEER_OPTIONS = {
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
       { urls: 'stun:global.stun.twilio.com:3478' },
       { urls: 'stun:stun.cloudflare.com:3478' },
-      {
-        // Relay fallback for networks where no direct path exists (symmetric NAT,
-        // blocked UDP, some mobile and office wifi). The TCP variants matter most:
-        // UDP is usually the first thing a network drops.
-        urls: [
-          'turn:openrelay.metered.ca:80',
-          'turn:openrelay.metered.ca:443',
-          'turn:openrelay.metered.ca:443?transport=tcp',
-          'turns:openrelay.metered.ca:443?transport=tcp'
-        ],
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-      }
+      ...TURN_SERVERS
     ]
   }
 };
@@ -107,6 +110,7 @@ const dom = {};
 window.addEventListener('DOMContentLoaded', init);
 
 function init() {
+  installIceTracing();
   dom.lobby = document.getElementById('lobby');
   dom.session = document.getElementById('session');
   dom.joinForm = document.getElementById('join-form');
@@ -589,6 +593,7 @@ function dialHost() {
     const timer = setTimeout(() => {
       clearTimeout(slowNote);
       dropPeer(entry);
+      logIceDiagnosis();
       reject(new Error('Timed out reaching the room host. Nobody is hosting that room right now - try again in a moment or pick the other room.'));
     }, TIMEOUTS.hostDial);
 
@@ -1723,10 +1728,73 @@ function makeTag(text, kind) {
   return tag;
 }
 
+let iceCounts = null;
+
+// PeerJS never surfaces ICE candidates or connection state, which makes a failed
+// guest connection indistinguishable from a slow one. With ?trace=1 we wrap the
+// constructor so candidate types and state changes are observable, and print the
+// tally into the chat log on failure so it can be read without dev tools.
+function installIceTracing() {
+  if (!TRACE || !window.RTCPeerConnection) {
+    return;
+  }
+
+  const Native = window.RTCPeerConnection;
+  const counts = { host: 0, srflx: 0, prflx: 0, relay: 0 };
+  const seen = new WeakSet();
+
+  function TracedPeerConnection(...args) {
+    const pc = new Native(...args);
+    if (!seen.has(pc)) {
+      seen.add(pc);
+      pc.addEventListener('icecandidate', (event) => {
+        if (!event.candidate) {
+          return;
+        }
+        const type = (/\styp (\w+)/.exec(event.candidate.candidate || '') || [])[1] || 'unknown';
+        counts[type] = (counts[type] || 0) + 1;
+        console.log(`[ice] candidate ${type} ${iceSummary()}`);
+      });
+      pc.addEventListener('iceconnectionstatechange', () => {
+        console.log(`[ice] connection ${pc.iceConnectionState} ${iceSummary()}`);
+      });
+      pc.addEventListener('icegatheringstatechange', () => {
+        console.log(`[ice] gathering ${pc.iceGatheringState} ${iceSummary()}`);
+      });
+    }
+    return pc;
+  }
+
+  TracedPeerConnection.prototype = Native.prototype;
+  window.RTCPeerConnection = TracedPeerConnection;
+  iceCounts = counts;
+}
+
+function iceSummary() {
+  if (!iceCounts) {
+    return '';
+  }
+  const parts = Object.keys(iceCounts)
+    .filter((key) => iceCounts[key])
+    .map((key) => `${key} ${iceCounts[key]}`);
+  return parts.length ? parts.join(', ') : 'no candidates yet';
+}
+
+function logIceDiagnosis() {
+  if (!TRACE || !iceCounts) {
+    return;
+  }
+  logEvent(`Connection check: ICE candidates seen - ${iceSummary()}.`);
+  if (!iceCounts.relay) {
+    logEvent('No TURN relay candidate was reachable. That is why the two of you cannot meet: this network gives WebRTC no direct path, and a relay is the only remaining option.');
+  }
+}
+
 function logEvent(text) {
   if (!text || !dom.chatLog) {
     return;
   }
+
 
   const item = document.createElement('li');
   item.className = 'chat-line';

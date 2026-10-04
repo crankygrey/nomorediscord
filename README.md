@@ -55,8 +55,8 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 
 - **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
-  The app also configures public STUN plus Metered Open Relay TURN so strict networks can fall
-  back to relay candidates when a direct path is not possible.
+  Public STUN is configured out of the box. A TURN relay is **not** enabled by default, so two
+  players on strict networks cannot connect yet. See [Strict networks](#strict-networks).
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
@@ -88,18 +88,60 @@ sounds/
 No build step, no environment variables. **HTTPS is required** for microphone access once you
 are off localhost.
 
+## Strict networks
+
+WebRTC needs a path between two machines. On most home networks STUN finds one. It fails when
+either side sits behind **symmetric NAT**, when a router or corporate firewall **blocks UDP**, or
+when two devices share a router **without NAT hairpinning** and mDNS is unavailable. In those
+cases the guest waits on "Connecting" forever, because no candidate pair can ever be built.
+
+A **TURN relay** is the only fix: it copies the traffic for you. No verified public demo relay is
+available any more — `openrelayproject` and `turn.cloudflare.com` were both measured producing zero
+relay candidates — so run your own:
+
+```bash
+docker run -d --name coturn -p 3478:3478/tcp -p 3478:3478/udp -p 5349:5349/tcp \
+  coturn/coturn -n --log-file=stdout \
+  --external-ip=YOUR_PUBLIC_IP \
+  --realm=turn.example.com --user=nomore:PASSWORD
+```
+
+Then add it to `TURN_SERVERS` in `app.js`:
+
+```js
+const TURN_SERVERS = [
+  { urls: 'turn:turn.example.com:3478?transport=tcp', username: 'nomore', credential: 'PASSWORD' },
+  { urls: 'turns:turn.example.com:5349?transport=tcp', username: 'nomore', credential: 'PASSWORD' }
+];
+```
+
+Both plain and TLS entries are listed because UDP is the first thing strict networks drop. Commit,
+push, wait for the Netlify deploy, and hard-refresh.
+
+To confirm what a browser can actually gather, open the app with `?trace=1` and attempt a join.
+On failure the chat log prints the candidate tally, for example:
+
+```
+Connection check: ICE candidates seen - host 6, srflx 2.
+No TURN relay candidate was reachable. That is why the two of you cannot meet...
+```
+
+If the tally shows no `srflx` or `relay`, the browser has no usable route at all and TURN is
+required. `?debug=1` additionally turns on PeerJS's own logging.
+
 ## Tests
 
 Both suites drive real Chrome or Edge. Install one, or point `CHROME_PATH` at it.
 
 ```bash
-npm test            # 116 checks: mesh, chat relay, counts, host handover, mic modes, sounds, archives
+npm test            # 123 checks: mesh, chat relay, counts, host handover, mic modes, sounds, archives
 npm run test:layout # 20 checks: overflow and clipping at 1280 / 900 / 390 / 320 px
 ```
 
 ## Known limits
 
 - The free PeerJS broker is a single point of failure. If it is down, nobody can join.
+- Without your own TURN relay, strict or symmetric networks cannot connect at all.
 - The lobby count needs someone hosting the room, so a room with no host reads as empty.
 - Five players is the intended ceiling, not a hard cap — the badge just says `full`.
 - No DTMF, no screen share, no recording. Voice and chat only.

@@ -35,10 +35,12 @@ browser to browser over WebRTC; only PeerJS's free public broker is used for sig
 ## Voice
 
 - `getUserMedia` with `echoCancellation`, `noiseSuppression`, `autoGainControl`, `channelCount: 1`.
-- ICE uses three STUN servers plus a TURN relay (`turn:global.relay.metered.ca`, TCP first) in
-  `PEER_OPTIONS`. The relay is not optional in practice: without it, two players behind
-  symmetric NAT or a network that blocks UDP can never connect, even though the same build
-  works fine on localhost.
+- ICE uses three STUN servers (`PEER_OPTIONS`). **No TURN relay ships enabled**: the public demo
+  relays (`openrelayproject`, `turn.cloudflare.com`) were measured returning zero relay candidates,
+  so `TURN_SERVERS` is an empty array the operator fills in. STUN-only is enough on ordinary home
+  networks and is what the 123-check localhost suite exercises; symmetric NAT, UDP-blocking firewalls
+  and NAT-loopback-free routers need a real coturn relay. With `?trace=1` the app counts candidate
+  types and prints the tally into the chat log on a failed host dial.
 - Media rides `peer.call()` / `call.answer()`; DataConnections carry chat and signaling only.
 - Incoming calls are answered with the local stream, with retries if no audio arrives.
 - Modes: **open mic** (default, always transmitting), **push to talk** (hold Space or the
