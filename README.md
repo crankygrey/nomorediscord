@@ -55,8 +55,9 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 
 - **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
-  Public STUN is configured out of the box. A TURN relay is **not** enabled by default, so two
-  players on strict networks cannot connect yet. See [Strict networks](#strict-networks).
+  Public STUN is configured out of the box. A TURN relay is enabled as soon as you add
+  credentials in `config.js`, so two players on strict networks can connect. See
+  [Strict networks](#strict-networks).
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
@@ -81,6 +82,7 @@ Any static host works — Netlify, Vercel, GitHub Pages, S3, a USB drive. Upload
 index.html
 styles.css
 app.js
+config.js
 images/
 sounds/
 ```
@@ -95,9 +97,28 @@ either side sits behind **symmetric NAT**, when a router or corporate firewall *
 when two devices share a router **without NAT hairpinning** and mDNS is unavailable. In those
 cases the guest waits on "Connecting" forever, because no candidate pair can ever be built.
 
-A **TURN relay** is the only fix: it copies the traffic for you. No verified public demo relay is
-available any more — `openrelayproject` and `turn.cloudflare.com` were both measured producing zero
-relay candidates — so run your own:
+A **TURN relay** is the only fix: it copies the traffic for you. You have two options.
+
+### Option A — free Metered relay (no server to run)
+
+1. Create a free account at <https://dashboard.metered.ca/signup?tool=turnserver>.
+2. Copy your **API key** and **app subdomain** from the dashboard.
+3. Put them in `config.js`:
+
+```js
+window.NOMOREDISCORD_CONFIG = {
+  meteredApp: 'myteam',                 // -> https://myteam.metered.live
+  meteredApiKey: 'YOUR_API_KEY'
+};
+```
+
+The app fetches short-lived TURN credentials on join, so nothing else changes. The free tier
+includes **20 GB/month** of relay traffic — voice is about 50 kbps, so that is hundreds of hours.
+The key is visible to anyone who loads the page, so use a dedicated account.
+
+### Option B — your own coturn
+
+Fully free once you have a machine with a public IP:
 
 ```bash
 docker run -d --name coturn -p 3478:3478/tcp -p 3478:3478/udp -p 5349:5349/tcp \
@@ -106,17 +127,19 @@ docker run -d --name coturn -p 3478:3478/tcp -p 3478:3478/udp -p 5349:5349/tcp \
   --realm=turn.example.com --user=nomore:PASSWORD
 ```
 
-Then add it to `TURN_SERVERS` in `app.js`:
+Then put the credentials in `config.js`:
 
 ```js
-const TURN_SERVERS = [
-  { urls: 'turn:turn.example.com:3478?transport=tcp', username: 'nomore', credential: 'PASSWORD' },
-  { urls: 'turns:turn.example.com:5349?transport=tcp', username: 'nomore', credential: 'PASSWORD' }
-];
+window.NOMOREDISCORD_CONFIG = {
+  turnServers: [
+    { urls: 'turn:turn.example.com:3478?transport=tcp', username: 'nomore', credential: 'PASSWORD' },
+    { urls: 'turns:turn.example.com:5349?transport=tcp', username: 'nomore', credential: 'PASSWORD' }
+  ]
+};
 ```
 
 Both plain and TLS entries are listed because UDP is the first thing strict networks drop. Commit,
-push, wait for the Netlify deploy, and hard-refresh.
+push, wait for the static host deploy, and hard-refresh.
 
 To confirm what a browser can actually gather, open the app with `?trace=1` and attempt a join.
 On failure the chat log prints the candidate tally, for example:

@@ -7,17 +7,15 @@ const DEBUG_ROOMS = TRACE;
 // A TURN relay is what lets two players on strict networks meet at all. If both
 // sit behind symmetric NAT, or either router blocks UDP, STUN alone can never
 // produce a working candidate pair and the guest hangs on "Connecting" forever.
-// There is no verified public demo relay: openrelayproject and turn.cloudflare.com
-// both were measured returning zero relay candidates, so nothing is enabled by
-// default. Drop your own coturn credentials in here and redeploy:
 //
-//   const TURN_SERVERS = [
-//     { urls: 'turn:your.coturn.host:3478?transport=tcp', username: 'u', credential: 'p' },
-//     { urls: 'turns:your.coturn.host:5349?transport=tcp', username: 'u', credential: 'p' }
-//   ];
-//
-// README "Strict networks" has a working coturn recipe.
-const TURN_SERVERS = [];
+// The easiest fix is the free Metered Open Relay (20 GB/month, no server to run):
+// create a free account, then put the API key and app name in config.js and the
+// TURN credentials are fetched at join time. You can also hardcode your own
+// coturn with config.js `turnServers` (see README "Strict networks").
+const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.NOMOREDISCORD_CONFIG) || {};
+const TURN_SERVERS = Array.isArray(RUNTIME_CONFIG.turnServers) ? RUNTIME_CONFIG.turnServers : [];
+const METERED_APP = String(RUNTIME_CONFIG.meteredApp || '').trim();
+const METERED_API_KEY = String(RUNTIME_CONFIG.meteredApiKey || '').trim();
 
 const PEER_OPTIONS = {
   debug: QUERY.has('debug') ? 2 : 0,
@@ -31,6 +29,45 @@ const PEER_OPTIONS = {
     ]
   }
 };
+
+let turnReady = null;
+
+// Metered hands out short-lived TURN credentials, so they are fetched once per
+// page load and cached on PEER_OPTIONS before any peer is opened. A failure is
+// non-fatal: voices still connect over STUN when the network allows it.
+function ensureTurnServers() {
+  if (turnReady) {
+    return turnReady;
+  }
+  turnReady = (async () => {
+    if (!METERED_APP || !METERED_API_KEY) {
+      return;
+    }
+    const url = `https://${METERED_APP}.metered.live/api/v1/turn/credentials`
+      + `?apiKey=${encodeURIComponent(METERED_API_KEY)}`;
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const servers = await response.json();
+      if (Array.isArray(servers) && servers.length) {
+        PEER_OPTIONS.config.iceServers.push(...servers);
+        trace('turn', `loaded ${servers.length} Metered relay entries`);
+      }
+    } catch (error) {
+      trace('turn', 'credential fetch failed', error && error.message);
+    }
+  })();
+  return turnReady;
+}
+
+function hasTurnRelay() {
+  return PEER_OPTIONS.config.iceServers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((value) => typeof value === 'string' && value.startsWith('turn'));
+  });
+}
 
 const MIC_CONSTRAINTS = {
   audio: {
@@ -111,6 +148,7 @@ window.addEventListener('DOMContentLoaded', init);
 
 function init() {
   installIceTracing();
+  ensureTurnServers();
   dom.lobby = document.getElementById('lobby');
   dom.session = document.getElementById('session');
   dom.joinForm = document.getElementById('join-form');
@@ -282,6 +320,8 @@ state.chatHistory = [];
 
     state.localStream = await acquireMic();
     applyAudioState();
+
+    await ensureTurnServers();
 
     let peer = null;
     let isHost = false;
@@ -594,7 +634,7 @@ function dialHost() {
       clearTimeout(slowNote);
       dropPeer(entry);
       logIceDiagnosis();
-      reject(new Error('Timed out reaching the room host. Nobody is hosting that room right now - try again in a moment or pick the other room.'));
+      reject(new Error('Could not reach the room host. If someone is already hosting, your network is blocking the peer-to-peer voice link (strict NAT needs a TURN relay). Otherwise, try again in a moment.'));
     }, TIMEOUTS.hostDial);
 
     entry.conn.once('open', () => {
@@ -737,7 +777,7 @@ function dialPeer(info) {
   state.peers.set(id, entry);
   entry.connectTimer = setTimeout(() => {
     if (entry.status !== 'connected') {
-      logEvent(`Could not reach ${entry.name || 'a player'}.`);
+      logEvent(`Could not reach ${entry.name || 'a player'}. A strict network may be blocking the link.`);
       removePeer(entry, { log: false });
     }
   }, TIMEOUTS.peerConnect);
