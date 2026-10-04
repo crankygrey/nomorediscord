@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0a0c12" />
+<meta name="description" content="NoMoreDiscord - lightweight peer-to-peer voice chat for gaming nights. No accounts, no servers, low latency." />
+<title>NoMoreDiscord &middot; P2P Gaming Voice Chat</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0c12'/%3E%3Cpath d='M16 7a4 4 0 0 1 4 4v5a4 4 0 1 1-8 0v-5a4 4 0 0 1 4-4z' fill='%237c5cff'/%3E%3Cpath d='M9 15v1a7 7 0 0 0 14 0v-1' stroke='%2322d3ee' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 23v3' stroke='%2322d3ee' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<main class="shell">
+<header class="brand">
+    <span class="brand-mark">
+      <img src="images/jug-drinks-your-tears.png" alt="Juggernaut sipping your tears" />
+    </span>
+    <div class="brand-text">
+      <h1>NoMoreDiscord</h1>
+      <p>Voice chat for dota nights. Audio goes straight to your friends, not to a server.</p>
+    </div>
+  </header>
+
+<section class="card" id="lobby">
+    <h2>Join the squad</h2>
+    <p class="lede">Name, room, talk. Blame the mid later.</p>
+
+    <form id="join-form" novalidate>
+      <div class="field">
+        <label for="name-input">Your name</label>
+        <input id="name-input" name="name" type="text" maxlength="16" autocomplete="nickname"
+               autocapitalize="none" spellcheck="false" placeholder="e.g. SwiftFox" required />
+      </div>
+
+      <div class="room-single">
+        <div class="room-top">
+          <span class="room-name">
+            <svg class="room-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M4 7c2.5 0 3.5 1.6 4.5 3 .6.9 1.6 1.4 3.5 1.4s2.9-.5 3.5-1.4c1-1.4 2-3 4.5-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              <path d="M6 13.5c0 3 2.7 5.5 6 5.5s6-2.5 6-5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              <circle cx="9.5" cy="14.5" r="1.1" fill="currentColor" />
+              <circle cx="14.5" cy="14.5" r="1.1" fill="currentColor" />
+            </svg>
+            Roshan
+          </span>
+          <span class="room-count" id="count-roshan" data-state="loading"><span class="room-count-value">checking</span></span>
+        </div>
+        <p class="room-blurb">Everyone farms Roshan. Now it farms you.</p>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="join-btn" type="submit">Join Roshan</button>
+    </form>
+
+    <div class="alert" id="lobby-error" role="alert" hidden></div>
+  </section>
+
+  <section class="card" id="session" hidden>
+    <div class="session-top">
+      <div class="room-meta">
+        <span class="label">Room</span>
+        <h2 id="room-name">&mdash;</h2>
+        <span class="callsign">You are <strong id="callsign">&mdash;</strong></span>
+      </div>
+      <div class="chips">
+        <span class="chip" id="status-chip" data-state="connecting">Connecting</span>
+        <span class="chip chip-mic" id="mic-chip" data-state="talking">Open mic</span>
+      </div>
+    </div>
+
+    <div class="alert" id="session-error" role="alert" hidden>
+      <span id="session-error-text"></span>
+      <button class="alert-close" id="alert-close" type="button" aria-label="Dismiss">&times;</button>
+    </div>
+
+    <div class="session-body">
+      <div class="squad-panel">
+        <div class="squad-head">
+          <h3>Squad <span class="pill" id="peer-count">1</span></h3>
+        </div>
+
+        <ul class="peer-list" id="peer-list"></ul>
+        <p class="empty" id="peer-empty">Empty lobby. Even the creeps left.</p>
+      </div>
+
+      <div class="chat">
+        <div class="chat-head">
+          <h3>Squad chat</h3>
+          <span class="hint" id="chat-hint">trash talk enabled</span>
+        </div>
+        <ul class="chat-log" id="chat-log" aria-live="polite"></ul>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" type="text" maxlength="280" autocomplete="off" spellcheck="false"
+               aria-label="Chat message" placeholder="Blame the mid, then queue again..." />
+          <button class="btn btn-primary" id="chat-send" type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ptt" id="ptt" type="button" aria-pressed="false">
+        <span class="ptt-ring" aria-hidden="true"></span>
+        <span class="ptt-label">Hold to talk</span>
+        <span class="ptt-key">Space</span>
+      </button>
+
+      <div class="control-row">
+        <button class="btn btn-ghost" id="mute-btn" type="button" aria-pressed="false">Mute</button>
+        <div class="segmented" role="group" aria-label="Microphone mode">
+          <button class="seg" id="mode-ptt" type="button" aria-pressed="false">Push to talk</button>
+          <button class="seg" id="mode-open" type="button" aria-pressed="true">Open mic</button>
+        </div>
+        <button class="btn btn-danger" id="leave-btn" type="button">Leave</button>
+      </div>
+      <p class="controls-hint" id="controls-hint">Open mic is live. No take-backs.</p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>fountain runes not included &middot; audio never leaves your squad</span>
+    <span id="browser-note"></span>
+  </footer>
+</main>
+
+<div class="audio-sinks" id="audio-sinks" aria-hidden="true"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

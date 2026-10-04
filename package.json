@@ -1,0 +1,17 @@
+{
+  "name": "nomore-discord",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NoMoreDiscord - peer-to-peer gaming voice chat over WebRTC (PeerJS). Static app plus browser-driven tests.",
+  "scripts": {
+    "start": "node tests/serve.js",
+    "test": "node tests/mesh.test.js",
+    "test:layout": "node tests/layout.test.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.11.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
