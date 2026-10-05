@@ -2331,9 +2331,12 @@ function isPeerUnavailable(error) {
 
 function cleanChatText(value) {
   return String(value || '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+|\n+$/g, '')
     .slice(0, MAX_CHAT);
 }
 
