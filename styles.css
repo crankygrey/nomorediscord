@@ -62,12 +62,55 @@ body {
 }
 
 .shell {
+  position: relative;
+  z-index: 1;
   width: min(880px, 100%);
   margin: 0 auto;
   padding: clamp(18px, 3.4vw, 42px) clamp(14px, 3vw, 28px) 28px;
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+/* Decorative full-height banners pinned to the viewport edges. They sit behind
+   the centered shell and only appear once there is room beside it. */
+.side-banners {
+  pointer-events: none;
+}
+
+.side-banner {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  height: 100dvh;
+  width: clamp(150px, calc(50vw - 460px), 460px);
+  object-fit: cover;
+  object-position: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.side-banner--left {
+  left: 0;
+  object-fit: contain;
+  object-position: center;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(to right, #000 90%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 90%, transparent 100%);
+}
+
+.side-banner--right {
+  right: 0;
+  object-position: right center;
+  -webkit-mask-image: linear-gradient(to left, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 68%, transparent 100%);
+}
+
+@media (max-width: 1180px) {
+  .side-banner {
+    display: none;
+  }
 }
 
 .brand {
