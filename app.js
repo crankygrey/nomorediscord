@@ -257,6 +257,8 @@ dom.micChip = document.getElementById('mic-chip');
   dom.joinForm.addEventListener('submit', onJoinSubmit);
   dom.alertClose.addEventListener('click', () => hideAlert(dom.sessionError));
   dom.chatForm.addEventListener('submit', onChatSubmit);
+  dom.chatInput.addEventListener('keydown', onChatInputKeydown);
+  dom.chatInput.addEventListener('input', autoGrowChatInput);
   dom.chatLog.addEventListener('scroll', () => {
     const distance = dom.chatLog.scrollHeight - dom.chatLog.scrollTop - dom.chatLog.clientHeight;
     state.stickToChat = distance < 32;
@@ -383,6 +385,7 @@ state.chatHistory = [];
     state.storedLines = loadStoredLines(state.roomId);
     dom.chatLog.textContent = '';
     dom.chatInput.value = '';
+    autoGrowChatInput();
 
     if (state.storedLines.length) {
       state.chatHistory = state.storedLines.slice(-MAX_CHAT_HISTORY);
@@ -1097,7 +1100,26 @@ function onChatSubmit(event) {
   event.preventDefault();
   sendChat(dom.chatInput.value);
   dom.chatInput.value = '';
+  autoGrowChatInput();
   dom.chatInput.focus();
+}
+
+// Enter sends, Shift+Enter (or Alt/Ctrl+Enter) starts a new line. The textarea
+// grows with the text up to its max-height, then scrolls.
+function onChatInputKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.isComposing) {
+    return;
+  }
+  event.preventDefault();
+  dom.chatForm.requestSubmit();
+}
+
+function autoGrowChatInput() {
+  if (!dom.chatInput) {
+    return;
+  }
+  dom.chatInput.style.height = 'auto';
+  dom.chatInput.style.height = `${dom.chatInput.scrollHeight}px`;
 }
 
 function sendChat(rawText) {
@@ -1575,6 +1597,7 @@ function resetSession() {
   }
   if (dom.chatInput) {
     dom.chatInput.value = '';
+    autoGrowChatInput();
   }
   hideAlert(dom.sessionError);
   render();
@@ -1589,6 +1612,7 @@ function showSession() {
   state.stickToChat = true;
   dom.chatLog.textContent = '';
   dom.chatInput.value = '';
+  autoGrowChatInput();
   dom.ptt.focus({ preventScroll: true });
 }
 

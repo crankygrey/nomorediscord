@@ -148,7 +148,8 @@ body {
   font-weight: 600;
 }
 
-input[type="text"] {
+input[type="text"],
+textarea {
   width: 100%;
   padding: 13px 14px;
   font: inherit;
@@ -161,7 +162,8 @@ input[type="text"] {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(208, 57, 43, 0.24);
 }
@@ -729,6 +731,7 @@ input[type="text"]:focus {
   gap: 6px;
   align-content: start;
   min-height: 0;
+  max-height: min(46vh, 360px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -800,10 +803,23 @@ input[type="text"]:focus {
   gap: 8px;
 }
 
-.chat-form input {
+.chat-form input,
+.chat-form textarea {
   padding: 10px 12px;
   font-family: var(--font);
   font-size: 0.9rem;
+}
+
+.chat-form textarea {
+  resize: none;
+  overflow-y: auto;
+  max-height: 132px;
+  line-height: 1.4;
+  scrollbar-width: thin;
+}
+
+.chat-form textarea::placeholder {
+  color: rgba(151, 160, 184, 0.65);
 }
 
 .chat-form .btn {
