@@ -166,6 +166,76 @@ input[type="text"]:focus {
   box-shadow: 0 0 0 3px rgba(208, 57, 43, 0.24);
 }
 
+.trouble {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.trouble > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  list-style: none;
+}
+
+.trouble > summary::-webkit-details-marker {
+  display: none;
+}
+
+.trouble > summary::before {
+  content: "+ ";
+}
+
+.trouble[open] > summary::before {
+  content: "\2212\00a0";
+}
+
+.trouble > summary:hover {
+  color: var(--text);
+}
+
+.trouble-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.switch {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.switch input {
+  margin: 2px 0 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.switch-body {
+  display: grid;
+  gap: 3px;
+}
+
+.switch-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.switch-hint,
+.trouble-note {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+
 .room-single {
   display: grid;
   gap: 4px;

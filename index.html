@@ -52,6 +52,22 @@
       </div>
 
       <button class="btn btn-primary btn-block" id="join-btn" type="submit">Join Roshan</button>
+
+      <details class="trouble" id="trouble">
+        <summary>Stuck on "Connecting"?</summary>
+        <div class="trouble-body">
+          <label class="switch" for="relay-toggle">
+            <input type="checkbox" id="relay-toggle" />
+            <span class="switch-body">
+              <span class="switch-label">Use a relay server</span>
+              <span class="switch-hint">Your network is blocking the direct line between players, so
+                voice gets copied through a relay instead. It connects, with a little extra delay.</span>
+            </span>
+          </label>
+          <p class="trouble-note">This only changes your own connection, and it stays on for next time.
+            If you connect fine without it, leave it off.</p>
+        </div>
+      </details>
     </form>
 
     <div class="alert" id="lobby-error" role="alert" hidden></div>

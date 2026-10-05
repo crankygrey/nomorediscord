@@ -13,6 +13,13 @@
 // Voice uses roughly 50 kbps, so 20 GB/month is several hundred hours of talk.
 // The key is visible to anyone using the page, so use a dedicated account.
 window.NOMOREDISCORD_CONFIG = {
+  // Set to false to run on public STUN alone: no Metered credentials are
+  // fetched and no relay candidate is offered. Useful for finding out whether
+  // your players actually need TURN - leave it off for a few games, and if
+  // nobody gets stuck on "Connecting", you can leave it off for good.
+  // `?turn=0` or `?turn=1` in the URL overrides this for a single test run.
+  turnEnabled: false,
+
   // e.g. 'myteam' for https://myteam.metered.live
   meteredApp: 'nomorediscord',
   meteredApiKey: 'c40aa67681426bff38d621c01640363be739',

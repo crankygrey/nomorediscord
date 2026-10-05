@@ -13,36 +13,94 @@ const DEBUG_ROOMS = TRACE;
 // TURN credentials are fetched at join time. You can also hardcode your own
 // coturn with config.js `turnServers` (see README "Strict networks").
 const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.NOMOREDISCORD_CONFIG) || {};
+
+// A relay is a last resort: it copies the voice through a server, which costs a
+// little delay but works on networks that block the direct line between players.
+// It is off by default so nobody pays for it until they need it. Three sources,
+// in order: `?turn=0` / `?turn=1` on the URL (one run), the checkbox in the lobby
+// (remembered per browser), then `turnEnabled` in config.js.
+const STUN_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  { urls: 'stun:stun.cloudflare.com:3478' }
+];
 const TURN_SERVERS = Array.isArray(RUNTIME_CONFIG.turnServers) ? RUNTIME_CONFIG.turnServers : [];
 const METERED_APP = String(RUNTIME_CONFIG.meteredApp || '').trim();
 const METERED_API_KEY = String(RUNTIME_CONFIG.meteredApiKey || '').trim();
+const RELAY_STORAGE_KEY = 'nomorediscord:relay';
+
+let turnEnabled = resolveTurnPreference();
+let meteredServers = [];
 
 const PEER_OPTIONS = {
   debug: QUERY.has('debug') ? 2 : 0,
   config: {
     iceCandidatePoolSize: 4,
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      ...TURN_SERVERS
-    ]
+    iceServers: STUN_SERVERS.slice()
   }
 };
+
+applyTurnPreference();
+
+function resolveTurnPreference() {
+  if (QUERY.has('turn')) {
+    return QUERY.get('turn') !== '0' && QUERY.get('turn') !== 'false';
+  }
+  const stored = readStoredRelayPreference();
+  if (stored !== null) {
+    return stored;
+  }
+  return RUNTIME_CONFIG.turnEnabled !== false;
+}
+
+function readStoredRelayPreference() {
+  try {
+    const raw = window.localStorage.getItem(RELAY_STORAGE_KEY);
+    return raw === null ? null : raw === '1';
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveRelayPreference(enabled) {
+  try {
+    window.localStorage.setItem(RELAY_STORAGE_KEY, enabled ? '1' : '0');
+  } catch (error) {
+    void error;
+  }
+}
+
+// Rebuilds the ICE server list, so ticking the checkbox in the lobby takes effect
+// for the peer that opens next. A page loaded with `?turn=0` stays STUN only: the
+// URL is the operator's call, not the player's.
+function applyTurnPreference() {
+  PEER_OPTIONS.config.iceServers = turnEnabled
+    ? [...STUN_SERVERS, ...TURN_SERVERS, ...meteredServers]
+    : STUN_SERVERS.slice();
+  return PEER_OPTIONS.config.iceServers;
+}
 
 let turnReady = null;
 
 // Metered hands out short-lived TURN credentials, so they are fetched once per
 // page load and cached on PEER_OPTIONS before any peer is opened. A failure is
-// non-fatal: voices still connect over STUN when the network allows it.
+// non-fatal: voices still connect over STUN when the network allows it. Relaying
+// being off is not cached, so ticking the checkbox in the lobby still fetches.
 function ensureTurnServers() {
+  if (meteredServers.length) {
+    return Promise.resolve();
+  }
+  if (!turnEnabled) {
+    trace('turn', 'relay switched off, STUN only');
+    return Promise.resolve();
+  }
+  if (!METERED_APP || !METERED_API_KEY) {
+    return Promise.resolve();
+  }
   if (turnReady) {
     return turnReady;
   }
   turnReady = (async () => {
-    if (!METERED_APP || !METERED_API_KEY) {
-      return;
-    }
     const url = `https://${METERED_APP}.metered.live/api/v1/turn/credentials`
       + `?apiKey=${encodeURIComponent(METERED_API_KEY)}`;
     try {
@@ -52,7 +110,8 @@ function ensureTurnServers() {
       }
       const servers = await response.json();
       if (Array.isArray(servers) && servers.length) {
-        PEER_OPTIONS.config.iceServers.push(...servers);
+        meteredServers = servers;
+        applyTurnPreference();
         trace('turn', `loaded ${servers.length} Metered relay entries`);
       }
     } catch (error) {
@@ -149,6 +208,18 @@ window.addEventListener('DOMContentLoaded', init);
 function init() {
   installIceTracing();
   ensureTurnServers();
+  dom.relayToggle = document.getElementById('relay-toggle');
+  dom.relayToggle.checked = turnEnabled;
+  dom.relayToggle.disabled = QUERY.has('turn');
+  dom.relayToggle.addEventListener('change', () => {
+    turnEnabled = dom.relayToggle.checked;
+    saveRelayPreference(turnEnabled);
+    applyTurnPreference();
+    trace('turn', turnEnabled ? 'relay switched on by player' : 'relay switched off by player');
+    if (turnEnabled) {
+      ensureTurnServers();
+    }
+  });
   dom.lobby = document.getElementById('lobby');
   dom.session = document.getElementById('session');
   dom.joinForm = document.getElementById('join-form');
@@ -634,7 +705,9 @@ function dialHost() {
       clearTimeout(slowNote);
       dropPeer(entry);
       logIceDiagnosis();
-      reject(new Error('Could not reach the room host. If someone is already hosting, your network is blocking the peer-to-peer voice link (strict NAT needs a TURN relay). Otherwise, try again in a moment.'));
+      reject(new Error(turnEnabled
+        ? 'Could not reach the room host. If someone is already hosting, your network is blocking the direct voice link, and the relay could not reach you either. Otherwise, try again in a moment.'
+        : 'Could not reach the room host. If someone is already hosting, your network is blocking the direct voice link. Tick "Use a relay server" under Stuck on "Connecting"? next time, or try again in a moment.'));
     }, TIMEOUTS.hostDial);
 
     entry.conn.once('open', () => {
@@ -1825,9 +1898,14 @@ function logIceDiagnosis() {
     return;
   }
   logEvent(`Connection check: ICE candidates seen - ${iceSummary()}.`);
-  if (!iceCounts.relay) {
-    logEvent('No TURN relay candidate was reachable. That is why the two of you cannot meet: this network gives WebRTC no direct path, and a relay is the only remaining option.');
+  if (iceCounts.relay) {
+    return;
   }
+  if (!hasTurnRelay()) {
+    logEvent('No relay candidate, because the relay was switched off. If you get stuck like this on your own network, tick "Use a relay server" under Stuck on "Connecting"? in the lobby.');
+    return;
+  }
+  logEvent('No TURN relay candidate was reachable. That is why the two of you cannot meet: this network gives WebRTC no direct path, and a relay is the only remaining option.');
 }
 
 function logEvent(text) {

@@ -56,8 +56,8 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 - **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
   Public STUN is configured out of the box. A TURN relay is enabled as soon as you add
-  credentials in `config.js`, so two players on strict networks can connect. See
-  [Strict networks](#strict-networks).
+  credentials in `config.js` and leave `turnEnabled` on, so two players on strict networks can
+  connect. See [Strict networks](#strict-networks).
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
@@ -98,6 +98,14 @@ when two devices share a router **without NAT hairpinning** and mDNS is unavaila
 cases the guest waits on "Connecting" forever, because no candidate pair can ever be built.
 
 A **TURN relay** is the only fix: it copies the traffic for you. You have two options.
+
+### Do I even need TURN?
+
+Set `turnEnabled: false` in `config.js` to run on public STUN alone — no credentials are fetched
+and no relay candidate is offered. Let your actual players try a few games that way. If nobody gets
+stuck on "Connecting", leave it off and keep the relay traffic at zero. If someone does get stuck,
+switch it back on and hand them the `?turn=1` link. `?turn=0` / `?turn=1` in the URL overrides the
+config for a single run, which is handy when a player reports trouble.
 
 ### Option A — free Metered relay (no server to run)
 
