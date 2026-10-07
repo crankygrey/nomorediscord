@@ -54,6 +54,29 @@ function inspect(page, showSession) {
           stateText.className = 'peer-state';
           stateText.textContent = status === 'connected' ? 'connected' : 'connecting...';
           item.appendChild(stateText);
+          const volumeRow = document.createElement('div');
+          volumeRow.className = 'peer-volume-row';
+
+          const mute = document.createElement('button');
+          mute.type = 'button';
+          mute.className = 'peer-mute';
+          mute.setAttribute('aria-pressed', 'false');
+          const muteIcon = document.createElement('img');
+          muteIcon.className = 'peer-mute-icon';
+          muteIcon.alt = '';
+          muteIcon.src = 'images/open_mic.webp';
+          mute.appendChild(muteIcon);
+
+          const slider = document.createElement('input');
+          slider.type = 'range';
+          slider.className = 'peer-volume';
+          slider.min = '0';
+          slider.max = '100';
+          slider.value = '100';
+          slider.setAttribute('aria-label', `Volume for ${name}`);
+
+          volumeRow.append(mute, slider);
+          item.appendChild(volumeRow);
         }
         list.appendChild(item);
       });
@@ -111,6 +134,10 @@ function inspect(page, showSession) {
       viewport: width,
       scrollWidth: document.documentElement.scrollWidth,
       problems,
+      squadScrolls: (() => {
+        const list = document.getElementById('peer-list');
+        return list.scrollHeight > list.clientHeight + 1;
+      })(),
       pttClipped: (() => {
         const ptt = document.getElementById('ptt');
         return ptt.scrollWidth > ptt.clientWidth + 2;
@@ -142,6 +169,7 @@ function inspect(page, showSession) {
       }
       report.expect(`${viewport.name} session has no horizontal overflow`, session.scrollWidth <= session.viewport + 1, true);
       report.expect(`${viewport.name} push-to-talk label fits`, session.pttClipped, false);
+      report.expect(`${viewport.name} squad list never needs a scrollbar`, session.squadScrolls, false);
       report.expect(`${viewport.name} session has no clipped elements`, session.problems, []);
 
       await client.context.close();

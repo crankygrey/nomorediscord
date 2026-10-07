@@ -143,7 +143,7 @@ size. A room with no host answers as empty. Refreshed every 12 s.
 ```bash
 npm start           # dev server on http://localhost:8787
 npm test            # 116 checks: mesh, chat, counts, host handover, mic modes, sounds, archives
-npm run test:layout # 20 checks: overflow and clipping at 1280 / 900 / 390 / 320 px
+npm run test:layout # 24 checks: overflow, clipping and squad scrollbars at 1280 / 900 / 390 / 320 px
 ```
 
 Both suites drive real Chrome/Edge through puppeteer-core, each in a private `?trace=1`

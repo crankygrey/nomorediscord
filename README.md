@@ -66,6 +66,16 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
   for the freed host ID and one of them takes over. Audio never routes through the host, so
   nobody's call drops. A player who cannot reach the host opens the room themselves instead of
   hanging on "Connecting".
+- **Volume:** every roster row except your own has a big mic button followed by a volume slider.
+  The slider sets how loud that person is for you; the mic button silences them completely and
+  flips between the open-mic and off-mic icons. Both are local — remembered per name in
+  `localStorage` under `nomorediscord:volumes` and `nomorediscord:muted` — and nobody else is
+  told about them.
+- **Soundboard:** the bar between the squad panel and the controls carries three clips (Ahh,
+  Horn, Toot). A click mixes the clip into your outgoing audio with a WebAudio mixer, so it
+  travels the same WebRTC link as your voice — teammates hear it through their volume sliders
+  and mic buttons — and it still plays while your own mic is gated off. Whoever played it is
+  announced with a system line in chat.
 
 ## Chat history and privacy
 
@@ -166,7 +176,7 @@ Both suites drive real Chrome or Edge. Install one, or point `CHROME_PATH` at it
 
 ```bash
 npm test            # 123 checks: mesh, chat relay, counts, host handover, mic modes, sounds, archives
-npm run test:layout # 20 checks: overflow and clipping at 1280 / 900 / 390 / 320 px
+npm run test:layout # 24 checks: overflow, clipping and squad scrollbars at 1280 / 900 / 390 / 320 px
 ```
 
 ## Known limits

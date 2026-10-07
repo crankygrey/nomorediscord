@@ -648,16 +648,13 @@ textarea:focus {
   padding: 0;
   display: grid;
   gap: 6px;
-  max-height: 156px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 
 .peer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 5px 10px;
   padding: 7px 11px;
   border-radius: 11px;
   border: 1px solid var(--line);
@@ -730,6 +727,64 @@ textarea:focus {
   font-size: 0.78rem;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.peer-volume-row {
+  flex: 1 0 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.peer-volume {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  height: 16px;
+  accent-color: var(--accent-2);
+  cursor: pointer;
+}
+
+.peer-mute {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  line-height: 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.peer-mute:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.peer-mute[aria-pressed="true"] {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.16);
+}
+
+.peer-mute:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.peer-mute-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 7px;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .empty {
@@ -867,6 +922,73 @@ textarea:focus {
 
 .chat-form .btn {
   padding: 10px 15px;
+}
+
+.soundboard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.snd {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.snd:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.snd:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+
+.snd.playing {
+  background: rgba(232, 177, 58, 0.16);
+  border-color: rgba(232, 177, 58, 0.5);
+  color: var(--accent-2);
+}
+
+.snd[disabled] {
+  cursor: default;
+}
+
+.snd-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.snd-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .controls {

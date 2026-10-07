@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node tests/serve.js",
     "test": "node tests/mesh.test.js",
-    "test:layout": "node tests/layout.test.js"
+    "test:layout": "node tests/layout.test.js",
+    "test:soundboard": "node tests/soundboard.test.js"
   },
   "devDependencies": {
     "puppeteer-core": "^23.11.1"

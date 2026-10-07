@@ -305,6 +305,53 @@ async function probeCount(page, roomId) {
     report.expect('open mic shows the transmitting chip', (await snapshot(clients[2].page)).micChip, 'Transmitting');
     report.expect('open mic is the selected mode again', (await snapshot(clients[2].page)).openMode, true);
 
+    console.log('\n[8b] silencing one teammate is local and reversible');
+    const peerMuteState = (client) => client.page.evaluate(() => ({
+      buttons: Array.from(document.querySelectorAll('.peer:not(.self) .peer-mute')).map((button) => ({
+        pressed: button.getAttribute('aria-pressed'),
+        src: button.querySelector('img').getAttribute('src')
+      })),
+      entries: Array.from(state.peers.values()).map((entry) => ({
+        name: entry.name,
+        muted: entry.muted,
+        audioMuted: entry.audioEl ? entry.audioEl.muted : null
+      })),
+      stored: window.localStorage.getItem('nomorediscord:muted')
+    }));
+    const clickPeerMute = (client, name) => client.page.evaluate((target) => {
+      const row = Array.from(document.querySelectorAll('.peer:not(.self)'))
+        .find((item) => item.querySelector('.peer-name').textContent === target);
+      row.querySelector('.peer-mute').click();
+    }, name);
+
+    const beforeMute = await peerMuteState(clients[1]);
+    report.expect('every teammate row shows the open-mic icon',
+      beforeMute.buttons, [{ pressed: 'false', src: 'images/open_mic.webp' }, { pressed: 'false', src: 'images/open_mic.webp' }]);
+    report.expect('no teammate starts silenced',
+      beforeMute.entries.every((entry) => entry.muted === false && entry.audioMuted === false), true);
+
+    await clickPeerMute(clients[1], 'AlphaFox');
+    await sleep(300);
+    const afterMute = await peerMuteState(clients[1]);
+    report.expect('the icon flips to off-mic',
+      afterMute.buttons.filter((button) => button.src === 'images/off_mic.webp').length, 1);
+    report.expect('that teammate is silenced in this browser',
+      afterMute.entries.find((entry) => entry.name === 'AlphaFox'), { name: 'AlphaFox', muted: true, audioMuted: true });
+    report.expect('the other teammate is untouched',
+      afterMute.entries.find((entry) => entry.name === 'CharlieWolf').muted, false);
+    report.expect('the silence is remembered',
+      Boolean(afterMute.stored && JSON.parse(afterMute.stored)['AlphaFox'.toLowerCase()]), true);
+    report.expect('the audio link stays up while silenced', (await snapshot(clients[1].page)).liveRemoteTracks, 2);
+
+    await clickPeerMute(clients[1], 'AlphaFox');
+    await sleep(300);
+    const afterUnmute = await peerMuteState(clients[1]);
+    report.expect('clicking again brings the icon back',
+      afterUnmute.buttons, [{ pressed: 'false', src: 'images/open_mic.webp' }, { pressed: 'false', src: 'images/open_mic.webp' }]);
+    report.expect('the teammate is audible again',
+      afterUnmute.entries.find((entry) => entry.name === 'AlphaFox'), { name: 'AlphaFox', muted: false, audioMuted: false });
+    report.expect('the remembered silence is cleared', JSON.parse(afterUnmute.stored || '{}'), {});
+
     console.log('\n[9] a peer leaving updates every roster');
     await clients[1].page.click('#leave-btn');
     await sleep(3000);

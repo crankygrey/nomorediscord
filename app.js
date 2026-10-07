@@ -28,6 +28,8 @@ const TURN_SERVERS = Array.isArray(RUNTIME_CONFIG.turnServers) ? RUNTIME_CONFIG.
 const METERED_APP = String(RUNTIME_CONFIG.meteredApp || '').trim();
 const METERED_API_KEY = String(RUNTIME_CONFIG.meteredApiKey || '').trim();
 const RELAY_STORAGE_KEY = 'nomorediscord:relay';
+const VOLUME_STORAGE_KEY = 'nomorediscord:volumes';
+const MUTED_STORAGE_KEY = 'nomorediscord:muted';
 
 let turnEnabled = resolveTurnPreference();
 let meteredServers = [];
@@ -65,6 +67,70 @@ function readStoredRelayPreference() {
 function saveRelayPreference(enabled) {
   try {
     window.localStorage.setItem(RELAY_STORAGE_KEY, enabled ? '1' : '0');
+  } catch (error) {
+    void error;
+  }
+}
+
+// Per-person volume, remembered across reloads under `nomorediscord:volumes`.
+// Keyed by lowercased name so a rejoin with the same name keeps its setting.
+function peerKey(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function loadVolumes() {
+  try {
+    const raw = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    void error;
+    return {};
+  }
+}
+
+function volumeFor(name) {
+  const stored = loadVolumes()[peerKey(name)];
+  const numeric = Number(stored);
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1 ? numeric : 1;
+}
+
+function saveVolume(name, volume) {
+  try {
+    const volumes = loadVolumes();
+    volumes[peerKey(name)] = volume;
+    window.localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(volumes));
+  } catch (error) {
+    void error;
+  }
+}
+
+// Silencing one loud player is local: it only mutes that person's audio in this
+// browser, under `nomorediscord:muted`, so it survives a reload like the slider.
+function loadMutedPeers() {
+  try {
+    const raw = window.localStorage.getItem(MUTED_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    void error;
+    return {};
+  }
+}
+
+function mutedFor(name) {
+  return Boolean(loadMutedPeers()[peerKey(name)]);
+}
+
+function saveMuted(name, muted) {
+  try {
+    const store = loadMutedPeers();
+    if (muted) {
+      store[peerKey(name)] = true;
+    } else {
+      delete store[peerKey(name)];
+    }
+    window.localStorage.setItem(MUTED_STORAGE_KEY, JSON.stringify(store));
   } catch (error) {
     void error;
   }
@@ -172,6 +238,15 @@ const SOUND_FILES = {
 const SOUND_VOLUME = 0.4;
 const soundClips = new Map();
 
+// Soundboard clips ride the same WebRTC stream as the microphone (buildMixer),
+// so they respect the per-player volume sliders and mute buttons on the far side.
+const SOUNDBOARD = [
+  { id: 'ahh', file: 'ahh', label: 'Ahh' },
+  { id: 'horn', file: 'failure_trumpet', label: 'Sad horn' },
+  { id: 'toot', file: 'fart', label: 'Toot' }
+];
+const SOUNDBOARD_VOLUME = 0.9;
+
 const state = {
   peer: null,
   probePeer: null,
@@ -186,6 +261,8 @@ const state = {
   busy: false,
   leaving: false,
   localStream: null,
+  mixer: null,
+  soundActive: 0,
   mode: 'open',
   userMuted: false,
   pttActive: false,
@@ -267,6 +344,15 @@ dom.micChip = document.getElementById('mic-chip');
   dom.modePtt.addEventListener('click', () => setMode('ptt'));
   dom.modeOpen.addEventListener('click', () => setMode('open'));
   dom.leaveBtn.addEventListener('click', () => leaveRoom());
+  dom.soundboard = document.getElementById('soundboard');
+  if (dom.soundboard) {
+    dom.soundboard.addEventListener('click', (event) => {
+      const button = event.target.closest('.snd');
+      if (button && dom.soundboard.contains(button)) {
+        triggerSoundboard(button);
+      }
+    });
+  }
 
   dom.ptt.addEventListener('pointerdown', onPttPointerDown);
   dom.ptt.addEventListener('pointerup', () => setPtt(false));
@@ -392,7 +478,7 @@ state.chatHistory = [];
       adoptChatHistory(state.storedLines);
     }
 
-    state.localStream = await acquireMic();
+    state.localStream = buildMixer(await acquireMic());
     applyAudioState();
 
     await ensureTurnServers();
@@ -464,6 +550,37 @@ async function acquireMic() {
     };
     const message = messages[error && error.name] || 'Could not access the microphone. Check your input device and permissions.';
     throw new Error(message);
+  }
+}
+
+// Everyone hears the outgoing stream, so the microphone and the soundboard
+// are mixed into a single track: a clip plays even while the mic itself is
+// gated off. Returns the stream that PeerJS should send.
+function buildMixer(micStream) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
+    return micStream;
+  }
+
+  try {
+    const ctx = new AudioCtx();
+    const dest = ctx.createMediaStreamDestination();
+    const micSource = ctx.createMediaStreamSource(micStream);
+    const micGain = ctx.createGain();
+    const boardGain = ctx.createGain();
+
+    micGain.gain.value = 1;
+    boardGain.gain.value = SOUNDBOARD_VOLUME;
+    micSource.connect(micGain);
+    micGain.connect(dest);
+    boardGain.connect(dest);
+
+    state.mixer = { ctx, micStream, micGain, boardGain, clips: new Map() };
+    return dest.stream;
+  } catch (error) {
+    void error;
+    state.mixer = null;
+    return micStream;
   }
 }
 
@@ -873,9 +990,14 @@ function ensureEntry(peerId) {
 }
 
 function createEntry(conn, data) {
+  const name = sanitizeName(data.name) || 'Player';
   return {
     id: data.id,
-    name: sanitizeName(data.name) || 'Player',
+    name,
+    volume: volumeFor(name),
+    volumeTouched: false,
+    muted: mutedFor(name),
+    muteTouched: false,
     conn,
     status: 'connecting',
     isHost: Boolean(data.isHost),
@@ -964,6 +1086,8 @@ function attachStream(entry, stream) {
 
   const audio = document.createElement('audio');
   audio.autoplay = true;
+  audio.volume = entry.volume;
+  audio.muted = entry.muted;
   audio.playsInline = true;
   audio.setAttribute('playsinline', '');
   audio.srcObject = stream;
@@ -998,6 +1122,18 @@ function handleMessage(entry, message) {
     case 'meta':
       if (typeof message.name === 'string' && message.name) {
         entry.name = uniquePeerName(sanitizeName(message.name).slice(0, MAX_NAME), entry.id);
+        if (!entry.volumeTouched) {
+          entry.volume = volumeFor(entry.name);
+          if (entry.audioEl) {
+            entry.audioEl.volume = entry.volume;
+          }
+        }
+        if (!entry.muteTouched) {
+          entry.muted = mutedFor(entry.name);
+          if (entry.audioEl) {
+            entry.audioEl.muted = entry.muted;
+          }
+        }
         render();
       }
       break;
@@ -1064,6 +1200,18 @@ function handleMessage(entry, message) {
         receiveChatFromPeer(entry, message);
       } else {
         receiveChat(message);
+      }
+      break;
+
+    case 'soundboard':
+      if (message.label && typeof message.name === 'string') {
+        const player = sanitizeName(message.name).slice(0, MAX_NAME) || 'Player';
+        const label = String(message.label).slice(0, 24);
+        logEvent(`${player} played ${label}.`);
+        const silenced = entry.muted ? 'muted' : (entry.volume <= 0.05 ? 'turned right down' : '');
+        if (silenced) {
+          logEvent(`Note: you have ${player} ${silenced} here, so their voice and soundboard stay silent.`);
+        }
       }
       break;
 
@@ -1578,6 +1726,18 @@ function resetSession() {
     state.localStream.getTracks().forEach((track) => track.stop());
   }
 
+  if (state.mixer) {
+    try {
+      state.mixer.ctx.close();
+    } catch (error) {
+      void error;
+    }
+    state.mixer.micStream.getTracks().forEach((track) => track.stop());
+    state.mixer = null;
+  }
+  state.soundActive = 0;
+  resetSoundboardButtons();
+
   state.peer = null;
   state.localStream = null;
   state.joined = false;
@@ -1671,10 +1831,18 @@ function isTransmitting() {
 
 function applyAudioState() {
   const transmitting = isTransmitting();
+  const boardLive = state.soundActive > 0;
   const track = state.localStream ? state.localStream.getAudioTracks()[0] : null;
 
+  // The mixer track stays open while a soundboard clip plays, but the
+  // microphone side of the mix is gated with the gain so a muted mic never
+  // leaks through underneath the clip.
   if (track) {
-    track.enabled = transmitting;
+    track.enabled = transmitting || boardLive;
+  }
+
+  if (state.mixer) {
+    state.mixer.micGain.gain.value = transmitting ? 1 : 0;
   }
 
   if (dom.ptt) {
@@ -1806,7 +1974,8 @@ function render() {
         name: entry.name,
         status: entry.status,
         isSelf: false,
-        isHost: entry.isHost
+        isHost: entry.isHost,
+        entry
       });
     });
 
@@ -1855,7 +2024,70 @@ function buildPeerRow(row) {
     item.appendChild(stateText);
   }
 
+  if (row.entry) {
+    item.appendChild(buildVolumeSlider(row.entry, row.name));
+  }
+
   return item;
+}
+
+function buildVolumeSlider(entry, name) {
+  const row = document.createElement('div');
+  row.className = 'peer-volume-row';
+
+  const mute = document.createElement('button');
+  mute.type = 'button';
+  mute.className = 'peer-mute';
+
+  const muteIcon = document.createElement('img');
+  muteIcon.className = 'peer-mute-icon';
+  muteIcon.alt = '';
+  mute.append(muteIcon);
+  syncPeerMute(mute, muteIcon, entry, name);
+
+  mute.addEventListener('click', () => {
+    entry.muted = !entry.muted;
+    entry.muteTouched = true;
+    if (entry.audioEl) {
+      entry.audioEl.muted = entry.muted;
+    }
+    syncPeerMute(mute, muteIcon, entry, name);
+    saveMuted(entry.name, entry.muted);
+  });
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'peer-volume';
+  slider.min = '0';
+  slider.max = '100';
+  slider.step = '5';
+  slider.value = String(Math.round(entry.volume * 100));
+  slider.title = `${slider.value}%`;
+  slider.setAttribute('aria-label', `Volume for ${name}`);
+
+  slider.addEventListener('input', () => {
+    const volume = Number(slider.value) / 100;
+    entry.volume = volume;
+    entry.volumeTouched = true;
+    if (entry.audioEl) {
+      entry.audioEl.volume = volume;
+    }
+    slider.title = `${slider.value}%`;
+    saveVolume(entry.name, volume);
+  });
+
+  row.append(mute, slider);
+  return row;
+}
+
+// The peer mute only stops that person's audio in this browser. The icon shows
+// their mic as open (you can hear them) or off (you silenced them).
+function syncPeerMute(button, icon, entry, name) {
+  const label = entry.muted ? `Unmute ${name}` : `Mute ${name}`;
+  button.setAttribute('aria-pressed', String(entry.muted));
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  icon.src = entry.muted ? 'images/off_mic.webp' : 'images/open_mic.webp';
 }
 
 function makeTag(text, kind) {
@@ -1957,6 +2189,126 @@ function logEvent(text) {
   }
 
   scrollChatToEnd();
+}
+
+function triggerSoundboard(button) {
+  if (button.disabled) {
+    return;
+  }
+  button.disabled = true;
+  button.classList.add('playing');
+  playSoundboard(button.dataset.snd).finally(() => {
+    button.disabled = false;
+    button.classList.remove('playing');
+  });
+}
+
+function resetSoundboardButtons() {
+  if (!dom.soundboard) {
+    return;
+  }
+  dom.soundboard.querySelectorAll('.snd').forEach((button) => {
+    button.disabled = false;
+    button.classList.remove('playing');
+  });
+}
+
+// Plays a soundboard clip into the outgoing stream. Resolves once the clip
+// has finished (or immediately when it could not be played).
+async function playSoundboard(id) {
+  const clip = SOUNDBOARD.find((item) => item.id === id);
+  if (!clip || !state.joined || state.leaving) {
+    return false;
+  }
+
+  // The clicker hears the clip on this machine straight away, through the
+  // same HTMLAudio path as the join/leave sounds, so pressing a button always
+  // answers back - even when nobody else is connected.
+  const local = new Audio(`sounds/soundboard/${clip.file}.mp3`);
+  local.volume = SOUNDBOARD_VOLUME;
+  local.play().catch(() => {});
+
+  const mixer = state.mixer;
+  if (!mixer) {
+    logEvent('Soundboard could not join the voice stream in this browser.');
+    return false;
+  }
+
+  let started = false;
+  let done = false;
+  const finish = () => {
+    if (done) {
+      return;
+    }
+    done = true;
+    if (started && state.mixer === mixer) {
+      state.soundActive = Math.max(0, state.soundActive - 1);
+      applyAudioState();
+    }
+  };
+
+  try {
+    if (mixer.ctx.state !== 'running') {
+      await mixer.ctx.resume();
+    }
+    if (mixer.ctx.state !== 'running') {
+      throw new Error(`the audio engine is ${mixer.ctx.state}`);
+    }
+
+    const buffer = await loadSoundboardClip(mixer, clip.file);
+    const source = mixer.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(mixer.boardGain);
+
+    state.soundActive += 1;
+    started = true;
+    applyAudioState();
+    broadcast({ type: 'soundboard', name: state.name, label: clip.label });
+    logEvent(`You played ${clip.label}.`);
+    source.start();
+
+    // onended never fires while the context is suspended, so the watchdog
+    // keeps the button from sticking in the "playing" state.
+    const ended = new Promise((resolve) => {
+      source.onended = () => {
+        finish();
+        resolve();
+      };
+    });
+    const watchdog = new Promise((resolve) => setTimeout(resolve, buffer.duration * 1000 + 1500));
+    await Promise.race([ended, watchdog]);
+    finish();
+    return true;
+  } catch (error) {
+    finish();
+    const reason = error && error.message ? error.message : 'the clip could not be decoded';
+    logEvent(`Soundboard failed: ${reason}.`);
+    trace('soundboard', 'failed', reason);
+    return false;
+  }
+}
+
+function loadSoundboardClip(mixer, file) {
+  const cached = mixer.clips.get(file);
+  if (cached) {
+    return cached;
+  }
+
+  const loading = fetch(`sounds/soundboard/${file}.mp3`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`soundboard clip ${file} is missing`);
+      }
+      return response.arrayBuffer();
+    })
+    .then((data) => mixer.ctx.decodeAudioData(data))
+    .catch((error) => {
+      mixer.clips.delete(file);
+      throw error;
+    });
+
+  mixer.clips.set(file, loading);
+  return loading;
 }
 
 function playSound(name) {
