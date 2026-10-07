@@ -575,13 +575,59 @@ function buildMixer(micStream) {
     micGain.connect(dest);
     boardGain.connect(dest);
 
-    state.mixer = { ctx, micStream, micGain, boardGain, clips: new Map() };
+    state.mixer = { ctx, micStream, micGain, boardGain, clips: new Map(), boardOffline: false };
+    preloadSoundboard(state.mixer);
     return dest.stream;
   } catch (error) {
     void error;
     state.mixer = null;
     return micStream;
   }
+}
+
+// The whole soundboard is three short files, so they are fetched and decoded
+// once when the session opens: every click afterwards is instant.
+function preloadSoundboard(mixer) {
+  const loading = SOUNDBOARD.map((clip) => loadSoundboardClip(mixer, clip.file).then(
+    (buffer) => buffer,
+    (error) => error
+  ));
+
+  Promise.all(loading).then((results) => {
+    if (state.mixer !== mixer) {
+      return;
+    }
+    const failed = results.find((result) => result instanceof Error);
+    if (failed) {
+      mixer.boardOffline = true;
+      mixer.boardError = failed;
+      reportSoundboardOnce(mixer);
+    } else {
+      trace('soundboard', 'clips ready', String(mixer.clips.size));
+    }
+  });
+}
+
+// The failure line would be wiped by showSession(), which clears the chat as
+// the room opens, so it is held back until the session view is on screen.
+function reportSoundboardOnce(mixer) {
+  if (!mixer || mixer.boardReported || !mixer.boardOffline) {
+    return;
+  }
+  if (!dom.session || dom.session.hidden) {
+    return;
+  }
+  mixer.boardReported = true;
+  reportSoundboardFailure(mixer.boardError);
+}
+
+function reportSoundboardFailure(error) {
+  const reason = error && error.message ? error.message : 'the clips could not be decoded';
+  const hint = location.protocol === 'file:'
+    ? 'this page was opened as a file: run "npm start" and open http://localhost:8787 instead'
+    : reason;
+  logEvent(`Soundboard is offline: ${hint}.`);
+  trace('soundboard', 'failed', hint);
 }
 
 function openPeer(preferredId) {
@@ -1774,6 +1820,7 @@ function showSession() {
   dom.chatInput.value = '';
   autoGrowChatInput();
   dom.ptt.focus({ preventScroll: true });
+  reportSoundboardOnce(state.mixer);
 }
 
 function showLobby() {
@@ -2233,6 +2280,11 @@ async function playSoundboard(id) {
     logEvent('Soundboard could not join the voice stream in this browser.');
     return false;
   }
+  if (mixer.boardOffline) {
+    // Reported once already when the clips failed to load.
+    reportSoundboardOnce(mixer);
+    return false;
+  }
 
   let started = false;
   let done = false;
@@ -2281,9 +2333,11 @@ async function playSoundboard(id) {
     return true;
   } catch (error) {
     finish();
-    const reason = error && error.message ? error.message : 'the clip could not be decoded';
-    logEvent(`Soundboard failed: ${reason}.`);
-    trace('soundboard', 'failed', reason);
+    if (!mixer.boardOffline) {
+      mixer.boardOffline = true;
+      mixer.boardError = error;
+    }
+    reportSoundboardOnce(mixer);
     return false;
   }
 }

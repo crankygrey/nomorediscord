@@ -69,6 +69,9 @@ function listenFor(page, ms) {
       return {
         mixer: Boolean(state.mixer),
         ctxState: state.mixer ? state.mixer.ctx.state : null,
+        clipsCached: state.mixer ? state.mixer.clips.size : -1,
+        boardOffline: state.mixer ? state.mixer.boardOffline : null,
+        lines: Array.from(document.querySelectorAll('#chat-log .chat-line')).map((li) => li.textContent),
         outgoingTracks: state.localStream ? state.localStream.getAudioTracks().length : -1,
         ids: buttons.map((button) => button.dataset.snd),
         labels: buttons.map((button) => button.textContent.trim()),
@@ -79,6 +82,8 @@ function listenFor(page, ms) {
     });
     console.log(`  setup -> ${JSON.stringify(setup)}`);
     report.expect('the mixer is running', [setup.mixer, setup.ctxState], [true, 'running']);
+    report.expect('all three clips are preloaded at join', setup.clipsCached, 3);
+    report.expect('nothing failed at preload', [setup.boardOffline, setup.lines.some((line) => /Soundboard is offline/.test(line))], [false, false]);
     report.expect('the outgoing stream is one mixed track', setup.outgoingTracks, 1);
     report.expect('the three buttons are there', setup.ids, ['ahh', 'horn', 'toot']);
     report.expect('every button is labelled', setup.labels.length, 3);

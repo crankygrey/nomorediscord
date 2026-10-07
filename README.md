@@ -72,10 +72,14 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
   `localStorage` under `nomorediscord:volumes` and `nomorediscord:muted` — and nobody else is
   told about them.
 - **Soundboard:** the bar between the squad panel and the controls carries three clips (Ahh,
-  Horn, Toot). A click mixes the clip into your outgoing audio with a WebAudio mixer, so it
-  travels the same WebRTC link as your voice — teammates hear it through their volume sliders
-  and mic buttons — and it still plays while your own mic is gated off. Whoever played it is
-  announced with a system line in chat.
+  Horn, Toot). The three files are fetched and decoded once when you join, so a click is
+  instant: it mixes the clip into your outgoing audio with a WebAudio mixer, so it travels the
+  same WebRTC link as your voice — teammates hear it through their volume sliders and mic
+  buttons — and it still plays while your own mic is gated off. Whoever played it is announced
+  with a system line in chat, and the clicker hears the clip on their own speakers too.
+  Clips are loaded with `fetch`, which browsers refuse on `file://` pages, so the soundboard
+  needs a server (`npm start`); opening `index.html` from disk shows
+  `Soundboard is offline: …` instead.
 
 ## Chat history and privacy
 
