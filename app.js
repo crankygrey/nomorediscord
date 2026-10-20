@@ -8,17 +8,14 @@ const DEBUG_ROOMS = TRACE;
 // sit behind symmetric NAT, or either router blocks UDP, STUN alone can never
 // produce a working candidate pair and the guest hangs on "Connecting" forever.
 //
-// The easiest fix is the free Metered Open Relay (20 GB/month, no server to run):
-// create a free account, then put the API key and app name in config.js and the
-// TURN credentials are fetched at join time. You can also hardcode your own
-// coturn with config.js `turnServers` (see README "Strict networks").
+// The relay in config.js `turnServers` (ExpressTurn by default) is always on, so
+// two players on strict networks can always meet. Metered credentials in
+// config.js, if set, are fetched at join time and added alongside them.
 const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.NOMOREDISCORD_CONFIG) || {};
 
-// A relay is a last resort: it copies the voice through a server, which costs a
-// little delay but works on networks that block the direct line between players.
-// It is off by default so nobody pays for it until they need it. Three sources,
-// in order: `?turn=0` / `?turn=1` on the URL (one run), the checkbox in the lobby
-// (remembered per browser), then `turnEnabled` in config.js.
+// A relay copies the voice through a server, which costs a little delay but
+// works on networks that block the direct line between players. It is always
+// enabled: STUN servers come first, then the configured TURN relays.
 const STUN_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
   { urls: 'stun:global.stun.twilio.com:3478' },
@@ -27,11 +24,9 @@ const STUN_SERVERS = [
 const TURN_SERVERS = Array.isArray(RUNTIME_CONFIG.turnServers) ? RUNTIME_CONFIG.turnServers : [];
 const METERED_APP = String(RUNTIME_CONFIG.meteredApp || '').trim();
 const METERED_API_KEY = String(RUNTIME_CONFIG.meteredApiKey || '').trim();
-const RELAY_STORAGE_KEY = 'nomorediscord:relay';
 const VOLUME_STORAGE_KEY = 'nomorediscord:volumes';
 const MUTED_STORAGE_KEY = 'nomorediscord:muted';
 
-let turnEnabled = resolveTurnPreference();
 let meteredServers = [];
 
 const PEER_OPTIONS = {
@@ -42,34 +37,13 @@ const PEER_OPTIONS = {
   }
 };
 
-applyTurnPreference();
+refreshIceServers();
 
-function resolveTurnPreference() {
-  if (QUERY.has('turn')) {
-    return QUERY.get('turn') !== '0' && QUERY.get('turn') !== 'false';
-  }
-  const stored = readStoredRelayPreference();
-  if (stored !== null) {
-    return stored;
-  }
-  return RUNTIME_CONFIG.turnEnabled !== false;
-}
-
-function readStoredRelayPreference() {
-  try {
-    const raw = window.localStorage.getItem(RELAY_STORAGE_KEY);
-    return raw === null ? null : raw === '1';
-  } catch (error) {
-    return null;
-  }
-}
-
-function saveRelayPreference(enabled) {
-  try {
-    window.localStorage.setItem(RELAY_STORAGE_KEY, enabled ? '1' : '0');
-  } catch (error) {
-    void error;
-  }
+// The relay is always on, so the ICE list is STUN first, then every configured
+// TURN relay (config.js `turnServers`, plus Metered once its credentials land).
+function refreshIceServers() {
+  PEER_OPTIONS.config.iceServers = [...STUN_SERVERS, ...TURN_SERVERS, ...meteredServers];
+  return PEER_OPTIONS.config.iceServers;
 }
 
 // Per-person volume, remembered across reloads under `nomorediscord:volumes`.
@@ -136,28 +110,13 @@ function saveMuted(name, muted) {
   }
 }
 
-// Rebuilds the ICE server list, so ticking the checkbox in the lobby takes effect
-// for the peer that opens next. A page loaded with `?turn=0` stays STUN only: the
-// URL is the operator's call, not the player's.
-function applyTurnPreference() {
-  PEER_OPTIONS.config.iceServers = turnEnabled
-    ? [...STUN_SERVERS, ...TURN_SERVERS, ...meteredServers]
-    : STUN_SERVERS.slice();
-  return PEER_OPTIONS.config.iceServers;
-}
-
 let turnReady = null;
 
 // Metered hands out short-lived TURN credentials, so they are fetched once per
-// page load and cached on PEER_OPTIONS before any peer is opened. A failure is
-// non-fatal: voices still connect over STUN when the network allows it. Relaying
-// being off is not cached, so ticking the checkbox in the lobby still fetches.
+// page load and merged into the ICE list before any peer is opened. A failure is
+// non-fatal: the config.js relay is already in the list.
 function ensureTurnServers() {
   if (meteredServers.length) {
-    return Promise.resolve();
-  }
-  if (!turnEnabled) {
-    trace('turn', 'relay switched off, STUN only');
     return Promise.resolve();
   }
   if (!METERED_APP || !METERED_API_KEY) {
@@ -177,7 +136,7 @@ function ensureTurnServers() {
       const servers = await response.json();
       if (Array.isArray(servers) && servers.length) {
         meteredServers = servers;
-        applyTurnPreference();
+        refreshIceServers();
         trace('turn', `loaded ${servers.length} Metered relay entries`);
       }
     } catch (error) {
@@ -285,18 +244,6 @@ window.addEventListener('DOMContentLoaded', init);
 function init() {
   installIceTracing();
   ensureTurnServers();
-  dom.relayToggle = document.getElementById('relay-toggle');
-  dom.relayToggle.checked = turnEnabled;
-  dom.relayToggle.disabled = QUERY.has('turn');
-  dom.relayToggle.addEventListener('change', () => {
-    turnEnabled = dom.relayToggle.checked;
-    saveRelayPreference(turnEnabled);
-    applyTurnPreference();
-    trace('turn', turnEnabled ? 'relay switched on by player' : 'relay switched off by player');
-    if (turnEnabled) {
-      ensureTurnServers();
-    }
-  });
   dom.lobby = document.getElementById('lobby');
   dom.session = document.getElementById('session');
   dom.joinForm = document.getElementById('join-form');
@@ -871,9 +818,8 @@ function dialHost() {
       clearTimeout(slowNote);
       dropPeer(entry);
       logIceDiagnosis();
-      reject(new Error(turnEnabled
-        ? 'Could not reach the room host. If someone is already hosting, your network is blocking the direct voice link, and the relay could not reach you either. Otherwise, try again in a moment.'
-        : 'Could not reach the room host. If someone is already hosting, your network is blocking the direct voice link. Tick "Use a relay server" under Stuck on "Connecting"? next time, or try again in a moment.'));
+      reject(new Error(
+        'Could not reach the room host. If someone is already hosting, your network is blocking the direct voice link, and the relay could not reach you either. Otherwise, try again in a moment.'));
     }, TIMEOUTS.hostDial);
 
     entry.conn.once('open', () => {
@@ -2205,7 +2151,7 @@ function logIceDiagnosis() {
     return;
   }
   if (!hasTurnRelay()) {
-    logEvent('No relay candidate, because the relay was switched off. If you get stuck like this on your own network, tick "Use a relay server" under Stuck on "Connecting"? in the lobby.');
+    logEvent('No TURN relay is configured in config.js, so this network has no way through. Add turnServers credentials there.');
     return;
   }
   logEvent('No TURN relay candidate was reachable. That is why the two of you cannot meet: this network gives WebRTC no direct path, and a relay is the only remaining option.');

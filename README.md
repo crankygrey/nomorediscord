@@ -55,9 +55,9 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 
 - **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
-  Public STUN is configured out of the box. A TURN relay is enabled as soon as you add
-  credentials in `config.js` and leave `turnEnabled` on, so two players on strict networks can
-  connect. See [Strict networks](#strict-networks).
+  Public STUN plus a TURN relay are configured out of the box (ExpressTurn credentials ship in
+  `config.js`), so two players on strict networks can connect. See
+  [Strict networks](#strict-networks).
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
   the next host if it leaves.
 - **Counts:** the lobby opens a throwaway peer, asks the room's host for its roster size, and
@@ -111,15 +111,16 @@ either side sits behind **symmetric NAT**, when a router or corporate firewall *
 when two devices share a router **without NAT hairpinning** and mDNS is unavailable. In those
 cases the guest waits on "Connecting" forever, because no candidate pair can ever be built.
 
-A **TURN relay** is the only fix: it copies the traffic for you. You have two options.
+A **TURN relay** is the only fix: it copies the traffic for you. It is always on — STUN is listed
+first so direct paths win when they exist, and the relay only carries traffic when the direct
+line between two players is blocked.
 
-### Do I even need TURN?
+### The default relay — free ExpressTurn
 
-Set `turnEnabled: false` in `config.js` to run on public STUN alone — no credentials are fetched
-and no relay candidate is offered. Let your actual players try a few games that way. If nobody gets
-stuck on "Connecting", leave it off and keep the relay traffic at zero. If someone does get stuck,
-switch it back on and hand them the `?turn=1` link. `?turn=0` / `?turn=1` in the URL overrides the
-config for a single run, which is handy when a player reports trouble.
+The free ExpressTurn credentials in `config.js` (`turnServers`) ship with the app, so TURN works
+with no setup. The credentials are visible to anyone who loads the page, so grab your own free
+key from <https://www.expressturn.com> and swap it in if you would rather use your own quota.
+There is no toggle: every connection offers relay candidates.
 
 ### Option A — free Metered relay (no server to run)
 
@@ -149,7 +150,7 @@ docker run -d --name coturn -p 3478:3478/tcp -p 3478:3478/udp -p 5349:5349/tcp \
   --realm=turn.example.com --user=nomore:PASSWORD
 ```
 
-Then put the credentials in `config.js`:
+Then replace the `turnServers` entries in `config.js`:
 
 ```js
 window.NOMOREDISCORD_CONFIG = {
@@ -186,7 +187,8 @@ npm run test:layout # 24 checks: overflow, clipping and squad scrollbars at 1280
 ## Known limits
 
 - The free PeerJS broker is a single point of failure. If it is down, nobody can join.
-- Without your own TURN relay, strict or symmetric networks cannot connect at all.
+- The relay is the free ExpressTurn service; if its quota runs out or it is down, strict or
+  symmetric networks cannot connect at all.
 - The lobby count needs someone hosting the room, so a room with no host reads as empty.
 - Five players is the intended ceiling, not a hard cap — the badge just says `full`.
 - No DTMF, no screen share, no recording. Voice and chat only.

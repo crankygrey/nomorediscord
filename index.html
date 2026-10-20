@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#0a0c12" />
+<meta name="theme-color" content="#2a2522" />
 <meta name="description" content="NoMoreDiscord - lightweight peer-to-peer voice chat for gaming nights. No accounts, no servers, low latency." />
 <title>NoMoreDiscord &middot; P2P Gaming Voice Chat</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0c12'/%3E%3Cpath d='M16 7a4 4 0 0 1 4 4v5a4 4 0 1 1-8 0v-5a4 4 0 0 1 4-4z' fill='%237c5cff'/%3E%3Cpath d='M9 15v1a7 7 0 0 0 14 0v-1' stroke='%2322d3ee' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 23v3' stroke='%2322d3ee' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E" />
@@ -57,22 +57,6 @@
       </div>
 
       <button class="btn btn-primary btn-block" id="join-btn" type="submit">Join Roshan</button>
-
-      <details class="trouble" id="trouble">
-        <summary>Stuck on "Connecting"?</summary>
-        <div class="trouble-body">
-          <label class="switch" for="relay-toggle">
-            <input type="checkbox" id="relay-toggle" />
-            <span class="switch-body">
-              <span class="switch-label">Use a relay server</span>
-              <span class="switch-hint">Your network is blocking the direct line between players, so
-                voice gets copied through a relay instead. It connects, with a little extra delay.</span>
-            </span>
-          </label>
-          <p class="trouble-note">This only changes your own connection, and it stays on for next time.
-            If you connect fine without it, leave it off.</p>
-        </div>
-      </details>
     </form>
 
     <div class="alert" id="lobby-error" role="alert" hidden></div>
