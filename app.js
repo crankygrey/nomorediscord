@@ -889,6 +889,16 @@ async function claimHostSeat(message) {
   return false;
 }
 
+function armConnectTimeout(entry, message) {
+  clearTimeout(entry.connectTimer);
+  entry.connectTimer = setTimeout(() => {
+    if (entry.status !== 'connected') {
+      logEvent(message || `Could not reach ${entry.name || 'a player'}. A strict network may be blocking the link.`);
+      removePeer(entry, { log: false });
+    }
+  }, TIMEOUTS.peerConnect);
+}
+
 function acceptConnection(conn) {
   const id = conn.peer;
   const existing = state.peers.get(id);
@@ -897,14 +907,31 @@ function acceptConnection(conn) {
   }
 
   const metadata = conn.metadata || {};
+  const incomingName = sanitizeName(metadata.name);
+
+  const stale = incomingName
+    ? Array.from(state.peers.values()).find(
+        (entry) => entry.id !== id && !entry.isHost && entry.status !== 'connected' && entry.name === incomingName
+      ) || null
+    : null;
+  if (stale) {
+    stale.silent = true;
+    removePeer(stale, { log: false });
+  }
+
   const entry = createEntry(conn, {
     id,
-    name: sanitizeName(metadata.name),
+    name: incomingName,
     isHost: isHostId(id)
   });
 
   state.peers.set(id, entry);
+  if (existing && existing !== entry) {
+    clearTimeout(existing.connectTimer);
+    existing.connectTimer = null;
+  }
   wireConnection(entry);
+  armConnectTimeout(entry, `Could not finish connecting to ${entry.name || 'a player'}. A strict network may be blocking the link.`);
   render();
   return entry;
 }
@@ -920,7 +947,7 @@ function dialPeer(info) {
   }
 
   const existing = state.peers.get(id);
-  if (existing) {
+  if (existing && existing.conn) {
     return existing;
   }
 
@@ -948,24 +975,30 @@ function dialPeer(info) {
     return null;
   }
 
-  const entry = createEntry(conn, {
-    id,
-    name: cleanName,
-    isHost: Boolean(info.isHost),
-    dialedOut: true
-  });
-
-  if (superseded) {
-    entry.silent = true;
-  }
-
-  state.peers.set(id, entry);
-  entry.connectTimer = setTimeout(() => {
-    if (entry.status !== 'connected') {
-      logEvent(`Could not reach ${entry.name || 'a player'}. A strict network may be blocking the link.`);
-      removePeer(entry, { log: false });
+  let entry;
+  if (existing) {
+    entry = existing;
+    entry.conn = conn;
+    entry.dialedOut = true;
+    if (cleanName && cleanName !== 'Player') {
+      entry.name = cleanName;
     }
-  }, TIMEOUTS.peerConnect);
+    entry.silent = Boolean(superseded);
+  } else {
+    entry = createEntry(conn, {
+      id,
+      name: cleanName,
+      isHost: Boolean(info.isHost),
+      dialedOut: true
+    });
+
+    if (superseded) {
+      entry.silent = true;
+    }
+
+    state.peers.set(id, entry);
+  }
+  armConnectTimeout(entry);
 
   wireConnection(entry);
   render();
@@ -1150,9 +1183,18 @@ function handleMessage(entry, message) {
         if (isNewHost) {
           adoptNewHost(incoming.id, sanitizeName(incoming.name));
         } else if (!state.peers.has(incoming.id)) {
+          const incomingName = sanitizeName(incoming.name) || 'Player';
+          const stale = Array.from(state.peers.values()).find(
+            (entry) => entry.id !== incoming.id && !entry.isHost && entry.status !== 'connected' && entry.name === incomingName
+          ) || null;
+          if (stale) {
+            stale.silent = true;
+            removePeer(stale, { log: false });
+          }
           const entry = ensureEntry(incoming.id);
-          entry.name = sanitizeName(incoming.name) || 'Player';
+          entry.name = incomingName;
           entry.status = 'connecting';
+          armConnectTimeout(entry, `${entry.name} never made it into the room.`);
           logEvent(`${entry.name} joined.`);
           playSound('join');
           render();
