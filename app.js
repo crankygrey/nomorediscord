@@ -8,9 +8,9 @@ const DEBUG_ROOMS = TRACE;
 // sit behind symmetric NAT, or either router blocks UDP, STUN alone can never
 // produce a working candidate pair and the guest hangs on "Connecting" forever.
 //
-// The relay in config.js `turnServers` (ExpressTurn by default) is always on, so
-// two players on strict networks can always meet. Metered credentials in
-// config.js, if set, are fetched at join time and added alongside them.
+// The relay is always on: Metered credentials in config.js (`meteredApp` /
+// `meteredApiKey`) are fetched at join time and added alongside the STUN
+// servers, so two players on strict networks can always meet.
 const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.NOMOREDISCORD_CONFIG) || {};
 
 // A relay copies the voice through a server, which costs a little delay but
@@ -21,6 +21,7 @@ const STUN_SERVERS = [
   { urls: 'stun:global.stun.twilio.com:3478' },
   { urls: 'stun:stun.cloudflare.com:3478' }
 ];
+// Optional extra relay entries (e.g. a self-hosted coturn) from config.js.
 const TURN_SERVERS = Array.isArray(RUNTIME_CONFIG.turnServers) ? RUNTIME_CONFIG.turnServers : [];
 const METERED_APP = String(RUNTIME_CONFIG.meteredApp || '').trim();
 const METERED_API_KEY = String(RUNTIME_CONFIG.meteredApiKey || '').trim();
@@ -39,8 +40,9 @@ const PEER_OPTIONS = {
 
 refreshIceServers();
 
-// The relay is always on, so the ICE list is STUN first, then every configured
-// TURN relay (config.js `turnServers`, plus Metered once its credentials land).
+// The relay is always on, so the ICE list is STUN first, then any config.js
+// `turnServers` entries, then the Metered relay once its short-lived
+// credentials land.
 function refreshIceServers() {
   PEER_OPTIONS.config.iceServers = [...STUN_SERVERS, ...TURN_SERVERS, ...meteredServers];
   return PEER_OPTIONS.config.iceServers;
@@ -114,7 +116,7 @@ let turnReady = null;
 
 // Metered hands out short-lived TURN credentials, so they are fetched once per
 // page load and merged into the ICE list before any peer is opened. A failure is
-// non-fatal: the config.js relay is already in the list.
+// non-fatal: the app still works on networks where STUN alone is enough.
 function ensureTurnServers() {
   if (meteredServers.length) {
     return Promise.resolve();
@@ -2193,7 +2195,7 @@ function logIceDiagnosis() {
     return;
   }
   if (!hasTurnRelay()) {
-    logEvent('No TURN relay is configured in config.js, so this network has no way through. Add turnServers credentials there.');
+    logEvent('No TURN relay is configured in config.js, so this network has no way through. Set meteredApp and meteredApiKey (or add turnServers entries) there.');
     return;
   }
   logEvent('No TURN relay candidate was reachable. That is why the two of you cannot meet: this network gives WebRTC no direct path, and a relay is the only remaining option.');

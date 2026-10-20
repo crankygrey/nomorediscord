@@ -55,7 +55,7 @@ Chat is 280 characters with a short per-person cooldown, and the rate limit is 6
 
 - **Signaling:** the free public [PeerJS](https://peerjs.com) broker.
 - **Voice:** WebRTC `peer.call()` connections in a full mesh. Up to 4 streams in, 4 out.
-  Public STUN plus a TURN relay are configured out of the box (ExpressTurn credentials ship in
+  Public STUN plus a TURN relay are configured out of the box (Metered credentials ship in
   `config.js`), so two players on strict networks can connect. See
   [Strict networks](#strict-networks).
 - **Chat:** DataChannels, relayed by the host. The host keeps the transcript and hands it to
@@ -115,31 +115,16 @@ A **TURN relay** is the only fix: it copies the traffic for you. It is always on
 first so direct paths win when they exist, and the relay only carries traffic when the direct
 line between two players is blocked.
 
-### The default relay — free ExpressTurn
+### The default relay — free Metered
 
-The free ExpressTurn credentials in `config.js` (`turnServers`) ship with the app, so TURN works
-with no setup. The credentials are visible to anyone who loads the page, so grab your own free
-key from <https://www.expressturn.com> and swap it in if you would rather use your own quota.
-There is no toggle: every connection offers relay candidates.
+The free [Metered](https://dashboard.metered.ca/signup?tool=turnserver) credentials in `config.js`
+(`meteredApp` / `meteredApiKey`) ship with the app, so TURN works with no setup: the app fetches
+short-lived relay credentials on join. The free tier includes **20 GB/month** of relay traffic —
+voice is about 50 kbps, so that is hundreds of hours. The key is visible to anyone who loads the
+page, so use a dedicated account and swap in your own key from the dashboard if you would rather
+use your own quota. There is no toggle: every connection offers relay candidates.
 
-### Option A — free Metered relay (no server to run)
-
-1. Create a free account at <https://dashboard.metered.ca/signup?tool=turnserver>.
-2. Copy your **API key** and **app subdomain** from the dashboard.
-3. Put them in `config.js`:
-
-```js
-window.NOMOREDISCORD_CONFIG = {
-  meteredApp: 'myteam',                 // -> https://myteam.metered.live
-  meteredApiKey: 'YOUR_API_KEY'
-};
-```
-
-The app fetches short-lived TURN credentials on join, so nothing else changes. The free tier
-includes **20 GB/month** of relay traffic — voice is about 50 kbps, so that is hundreds of hours.
-The key is visible to anyone who loads the page, so use a dedicated account.
-
-### Option B — your own coturn
+### Alternative — your own coturn
 
 Fully free once you have a machine with a public IP:
 
@@ -150,10 +135,13 @@ docker run -d --name coturn -p 3478:3478/tcp -p 3478:3478/udp -p 5349:5349/tcp \
   --realm=turn.example.com --user=nomore:PASSWORD
 ```
 
-Then replace the `turnServers` entries in `config.js`:
+Then add `turnServers` entries to `config.js` (alongside the Metered keys, which stay as a
+backup):
 
 ```js
 window.NOMOREDISCORD_CONFIG = {
+  meteredApp: 'nomorediscord',
+  meteredApiKey: 'YOUR_METERED_KEY',
   turnServers: [
     { urls: 'turn:turn.example.com:3478?transport=tcp', username: 'nomore', credential: 'PASSWORD' },
     { urls: 'turns:turn.example.com:5349?transport=tcp', username: 'nomore', credential: 'PASSWORD' }
@@ -187,7 +175,7 @@ npm run test:layout # 24 checks: overflow, clipping and squad scrollbars at 1280
 ## Known limits
 
 - The free PeerJS broker is a single point of failure. If it is down, nobody can join.
-- The relay is the free ExpressTurn service; if its quota runs out or it is down, strict or
+- The relay is the free Metered service; if its quota runs out or it is down, strict or
   symmetric networks cannot connect at all.
 - The lobby count needs someone hosting the room, so a room with no host reads as empty.
 - Five players is the intended ceiling, not a hard cap — the badge just says `full`.
